@@ -442,7 +442,7 @@ def checkHolderSpreadsheet(spreadSheet, sheet_name=0,
             if not (isinstance(e, int) or isinstance(e, float)):
                 raise Exception(f"non-numerical value in {f}: {e}")
             if e<=0 or np.isnan(e):
-                raise Exception(f"invalid value in {f}: {e}, possitive value required.")
+                raise Exception(f"invalid value in {f}: {e}, positive value required.")
     if 'volume' in allFields:
         if np.min(list(d['volume'].values()))<min_load_volume:
             raise Exception(f"load volume must be greater than {min_load_volume} ul!")
@@ -454,27 +454,38 @@ def checkHolderSpreadsheet(spreadSheet, sheet_name=0,
     if sp.min()<1:
         raise Exception(f"invalid sample positionL {sp.min()}.")
 
-    # check for duplicate sample name
-    sl = list(d['sampleName'].values())
-    for ss in sl:
-        if not check_sample_name(ss, check_for_duplicate=False):
-            raise Exception(f"invalid sample name: {ss}")
-        if sl.count(ss)>1 and str(ss)!='nan':
-            idx = list(d['holderName'])
-            hl = [d['holderName'][idx[i]] for i in range(len(d['holderName'])) if d['sampleName'][idx[i]]==ss]
-            for hh in hl:
-                if hl.count(hh)>1:
-                    raise Exception(f'duplicate sample name: {ss} in holder {hh}')
-    # check for duplicate sample position within a holder
-    hlist = list(np.unique(list(d['holderName'].values())))
-    idx = list(d['holderName'])
-    for hn in hlist:
-        plist = [d['position'][idx[i]] for i in range(len(d['holderName'])) if d['holderName'][idx[i]]==hn]
-        for pv in plist:
-            if plist.count(pv)>1:
-                raise Exception(f"duplicate sample position: {pv}")
-            
-    return hlist
+    sdict = {}
+    for (hn,pos,sn,bn) in zip(d['holderName'].values(), 
+                              d['position'].values(), 
+                              d['sampleName'].values(), 
+                              d['bufferName'].values()):
+        if not hn in sdict.keys():
+            sdict[hn] = {}
+        if str(sn)=='nan':
+            continue
+        if pos in sdict[hn].keys():
+            raise Exception(f"duplicate sample position {pos} in {hn}")
+        if not check_sample_name(sn, check_for_duplicate=False):
+            raise Exception(f"invalid sample name: {sn} in holder {hn}")
+        sdict[hn][pos] = {'sample': sn}
+        if str(bn)!='nan':
+            sdict[hn][pos]['buffer'] = bn 
+
+    for hn,sd in sdict.items():
+        plist = list(sd.keys())
+        slist = [t['sample'] for t in sd.values()]
+        for pos,t in sd.items():
+            if slist.count(t['sample'])>1:
+                raise Exception(f"duplicate sample name {t['sample']} in {hn}")
+            if not 'buffer' in t.keys():
+                continue
+            if not t['buffer'] in slist:
+                raise Exception(f"{t['buffer']} is not a valid buffer in {hn}")
+            bpos = plist[slist.index(t['buffer'])]
+            if (bpos-pos)%2:
+                raise Exception(f"{t['sample']} and its buffer not in the same row in holder {hn}")
+                    
+    return list(sdict.keys())
 
 def autofillSpreadsheet(d, fields=['holderName', 'volume']):
     """ if the filed in one of the autofill_fileds is empty, duplicate the value from the previous row
@@ -502,10 +513,15 @@ def validateHolderSpreadsheet(fn, proposal_id, SAF_id):
     hlist = checkHolderSpreadsheet(fn) 
     if len(hlist)>3:
         raise Exception(f"Found {len(hlist)} sample holders. Only 3 are allowed.")
-
+    ll = np.asarray([len(h) for h in hlist])
+    if (ll>5).any():  # for the purpose of fitting the text on the QR code stciker
+        raise Exception(f"Please limit the length of the holder names to 5 characters.")
+        
     print("Generating UUIDs ...")
     wb = openpyxl.load_workbook(fn)
     wb[wb.sheetnames[0]].title = f"{proposal_id}-{SAF_id}"
+    if "UIDs" in wb.sheetnames:
+        del wb["UIDs"]
     ws1 = wb.create_sheet("UIDs")
     ws1.append(["holderName", "UID"])
     for i in range(len(hlist)):

@@ -11,7 +11,8 @@ setup(
     url="",
     packages=['lixtools'],
     install_requires=['py4xs', 'numpy', 'pandas', 
-                      'python-barcode', 'matplotlib', 'pillow'],
+                      'python-barcode', 'matplotlib', 'pillow', 
+                      'openpyxl>=3', 'xlrd'],
     python_requires='>=3',
     classifiers=[
         "Intended Audience :: Science/Research",
