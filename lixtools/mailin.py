@@ -157,6 +157,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
         ot2_layout should describe the labware present on the deck, with identifying bar/QR codes
     """
     pdict = {}
+    bdict0 = None
     if not isinstance(xls_fns, list):
         xls_fns = [xls_fns]
     for fn in xls_fns:
@@ -167,6 +168,10 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
             sh_list = [xl.sheet_names[0]]
         for sh_name in sh_list:
             bdict,wdict,mdict = validate_sample_list(fn, b_lim=b_lim, generate_barcode=False)
+            if bdict0 is None:
+                bdict0 = bdict
+            elif bdict['proposal_id']!=bdict0['proposal_id'] or bdict['proposal_id']!=bdict0['proposal_id']:
+                raise Exception("Cannot process plates from differernt proposal/SAF together.")
             pdict[sh_name] = [wdict, mdict]
     
     # get ot2 layout info
@@ -176,6 +181,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
     slist = []
     for bcode in pdict.keys():
         pname = bcode # labware name for the plate
+        plabel = bcode.split("-")[-1]
         row_name = None
         row_count = 0
         wdict,mdict = pdict[bcode]
@@ -186,7 +192,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
                 row_count += 1
                 if row_count%2:
                     # get labware name for the holder
-                    hname = f"h{int((row_count+1)/2):02d}"
+                    hname = f"{plabel}_h{int((row_count+1)/2):02d}"
             col = int(wn[1:])
             hpos = 2*col - (row_count%2) 
             
@@ -257,7 +263,8 @@ def generate_docs(ot2_layout, xls_fns,
                   b_lim=4,
                   plate_type = "corning_96_wellplate_360ul_flat",
                   holder_type = "lix_3x_holder_c",
-                  tip_type = "opentrons_96_tiprack_300ul"
+                  tip_type = "opentrons_96_tiprack_300ul",
+                  flow_rate_aspirate = 50, flow_rate_dispense = 50
                  ):
     """ ot2_layout should be a dictionary:
             {"plates" : "1,2",
@@ -302,6 +309,8 @@ def generate_docs(ot2_layout, xls_fns,
         protocol.append(f"    lbw{slot} = ctx.load_labware('{tip_type}', '{slot}')\n")
         tips.append(f"lbw{slot}")
     protocol.append(f"    pipet = ctx.load_instrument('p300_single', 'left', tip_racks=[{','.join(tips)}])\n")
+    protocol.append(f"    pipet.flow_rate.aspirate = {flow_rate_aspirate}\n")
+    protocol.append(f"    pipet.flow_rate.dispense = {flow_rate_dispense}\n")
 
     for st in transfer_list:
         src,sw,dest,dw,vol = st
@@ -321,6 +330,109 @@ def generate_docs(ot2_layout, xls_fns,
             raise Exception(f"Unknown labware encountered: {dest}")
 
         protocol.append(f"    pipet.transfer({vol}, {sname}, {dname})\n")
+
+    fd = open(fn, "w+")
+    fd.writelines(protocol)
+    fd.close()
+    
+    fn = f"{run_name}.xlsx"
+    print(f"Writing measurement sequence to {fn}.")
+    generate_measurement_spreadsheet(fn, slist, holders, bdict)
+    
+    print("Done.")
+    
+def generate_docs2(ot2_layout, xls_fns,    
+                   run_name="test",
+                   b_lim=4,
+                   plate_types = ["corning_96_wellplate_360ul_flat", 
+                                  "biorad_96_wellplate_200ul_pcr"],
+                   holder_types = ["lix_3x_holder_c"],
+                   tip_types = ["opentrons_96_tiprack_300ul",
+                                "opentrons_96_tiprack_20ul"],
+                   pipets = {"left": {"type": "p300_single", "tip_size": "300ul", "maxV": 300}, 
+                             "right": {"type": "p20_single", "tip_size": "20ul", "maxV": 20}},
+                   flow_rate_aspirate = 0.3, flow_rate_dispense = 0.3  # fraction of the maxV
+                  ):
+    """ ot2_layout should be a dictionary, slot #: labware type
+            {"1" : "lix_3x_holder_c",
+             "2" : "corning_96_wellplate_360ul_flat",
+             "3" : "opentrons_96_tiprack_300ul"
+             "4" : "lix_3x_holder_c",
+             "6" : "opentrons_96_tiprack_20ul"}
+    """
+    print("Processing sample list(s) ...")
+    slist,transfer_list,bdict = process_sample_lists(xls_fns, b_lim=b_lim)
+    
+    h_slots = [k for k,l in ot2_layout.items() if l in holder_types]
+    p_slots = [k for k,l in ot2_layout.items() if l in plate_types]
+    t_slots = [k for k,l in ot2_layout.items() if l in tip_types]
+                    
+    print("Reading bar/QR codes, this might take a while ...")
+    ldict = read_OT2_layout(",".join(p_slots), ",".join(h_slots))
+    print(ldict)
+    
+    holders = {}
+    holder_qr_codes = chain(ldict['holders'].keys())
+    print(f"{len(ldict['holders'])} holders are available.")
+    for st in slist:
+        if not st[0] in holders.keys():
+            try:
+                holders[st[0]]= next(holder_qr_codes)
+            except StopIteration:
+                print("Error: Not enough sample holders for transfer.")
+                raise
+    print(f"{len(holders)} holders are needed.")
+
+    fn = f"{run_name}_protocol.py"
+    print(f"Generating protocol ({fn}) ...")
+    protocol = ["metadata = {'protocolName': 'sample transfer',\n",
+                "            'author': 'LiX',\n",
+                "            'description': 'auto-generated',\n",
+                "            'apiLevel': '2.3'\n",
+                "           }\n", 
+                "\n",
+                "def run(ctx):\n",]
+
+    for slot in p_slots+h_slots+t_slots:
+        protocol.append(f"    lbw{slot} = ctx.load_labware('{ot2_layout[slot]}', '{slot}')\n")
+
+    for k,p in pipets.items():
+        tips = ','.join([f"lbw{s}" for s in t_slots if p["tip_size"] in ot2_layout[s]])
+        protocol.append(f"    pipet_{k} = ctx.load_instrument('p300_single', 'left', tip_racks=[{tips}])\n")
+        protocol.append(f"    pipet_{k}.flow_rate.aspirate = {flow_rate_aspirate*p['maxV']}\n")
+        protocol.append(f"    pipet_{k}.flow_rate.dispense = {flow_rate_dispense*p['maxV']}\n")
+
+    # sorted by maxV, low to high
+    pvdict = {pipets[pn]["maxV"]:pn for pn in pipets.keys()}
+    pvdict = {k:pvdict[k] for k in sorted(pvdict.keys())}
+    vlist = list(pvdict.keys())
+    def select_pipet(v):
+        if (v>vlist).all():
+            raise Exception(f"requested transfer volume exceeds tip maximum")
+        elif (v<vlist).all():
+            p = pvdict[vlist[0]]
+        else:
+            p = pvdict[vlist[-1]]
+        return f"pipet_{p}"         
+    
+    for st in transfer_list:
+        src,sw,dest,dw,vol = st
+        if dest in holders.keys():
+            dest = holders[dest]
+        if src in ldict["plates"].keys():
+            sname = f"lbw{ldict['plates'][src]['slot']}.well('{sw}')"
+        elif src in holders.values():
+            sname = f"lbw{ldict['holders'][src]['slot']}.well('{ldict['holders'][src]['holder']}{sw}')"
+        else:
+            raise Exception(f"Unknown labware encountered: {src}")
+        if dest in ldict["plates"].keys():
+            dname = f"lbw{ldict['plates'][dest]['slot']}.well('{dw}')"
+        elif dest in holders.values():
+            dname = f"lbw{ldict['holders'][dest]['slot']}.well('{ldict['holders'][dest]['holder']}{dw}')"
+        else:
+            raise Exception(f"Unknown labware encountered: {dest}")
+        
+        protocol.append(f"    {select_pipet(vol)}.transfer({vol}, {sname}, {dname})\n")
 
     fd = open(fn, "w+")
     fd.writelines(protocol)
@@ -485,7 +597,7 @@ def checkHolderSpreadsheet(spreadSheet, sheet_name=0,
             if (bpos-pos)%2:
                 raise Exception(f"{t['sample']} and its buffer not in the same row in holder {hn}")
                     
-    return list(sdict.keys())
+    return sdict
 
 def autofillSpreadsheet(d, fields=['holderName', 'volume']):
     """ if the filed in one of the autofill_fileds is empty, duplicate the value from the previous row
@@ -510,7 +622,8 @@ def validateHolderSpreadsheet(fn, proposal_id, SAF_id):
     # validate sample list on the Holders tab and generate UIDs for each holder 
     # beamline prints the QR codes and ship the holders to user
     print("Checking spreadsheet format ...")
-    hlist = checkHolderSpreadsheet(fn) 
+    sdict = checkHolderSpreadsheet(fn)
+    hlist = list(sdict.keys()) 
     if len(hlist)>3:
         raise Exception(f"Found {len(hlist)} sample holders. Only 3 are allowed.")
     ll = np.asarray([len(h) for h in hlist])
