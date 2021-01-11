@@ -3,7 +3,21 @@ import numpy as np
 from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
-from py4xs.utils import run
+
+def run(cmd, path="", ignoreErrors=True, returnError=False):
+    """ cmd should be a list, e.g. ["ls", "-lh"]
+        path is for the cmd, not the same as cwd
+    """
+    cmd[0] = path+cmd[0]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if len(err)>0 and not ignoreErrors:
+        print(err.decode())
+        raise Exception(err.decode())
+    if returnError:
+        return out.decode(),err.decode()
+    else:
+        return out.decode()
     
 def extract_vals(txt, dtype=float, strip=None, debug=False):
     if strip is not None:
@@ -117,7 +131,7 @@ def read_gnom_out_file(fn, plot_pr=False, ax=None):
     #hdr,t1 = tt.split("S          J EXP       ERROR       J REG       I REG")
     iq, pr = t1.split("####      Real Space Data                               ####")
     #iq, pr = t1.split("Distance distribution  function of particle")
-    di, dq = read_arr_from_strings(iq.rstrip().split("\n"), cols=[0,-1])
+    dq, di = read_arr_from_strings(iq.rstrip().split("\n"), cols=[0,-1])
     dr, dpr, dpre = read_arr_from_strings(pr.rstrip().split("\n"), cols=[0,1,2])
     
     if plot_pr:
@@ -126,7 +140,7 @@ def read_gnom_out_file(fn, plot_pr=False, ax=None):
             ax = plt.gca()
         ax.errorbar(dr, dpr, dpre)
     
-    return hdr.rstrip(),di,dq,dr,dpr,dpre
+    return hdr.rstrip(),dq,di,dr,dpr,dpre
 
 # ALMERGE   Automatically merges data collected from two different concentrations or 
 #           extrapolates it to infinite dilution assuming moderate particle interactions.
@@ -266,7 +280,11 @@ def atsas_dat_tools(fn_out, path=""):
             "datmow": r_mow}
 
 
-def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
+def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, 
+                     plot_full_q_range=False, print_results=True, path=""):
+    if not os.path.isdir("processed"):
+        os.mkdir("processed")
+    
     if ax is None:
         ax = []
         if fig is None:
@@ -285,19 +303,39 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, prin
     else:
         tfn = "processed/t.dat"
         tfn_out = f"processed/{sn}.out"
-    atsas_create_temp_file(tfn, d1s, skip=skip, q_cutoff=q_cutoff)
+    
+    sk0 = skip
+    qc0 = q_cutoff 
+    if skip<0:
+        sk0 = 0
+    if q_cutoff<0:
+        qc0 = 0.3
+    atsas_create_temp_file(tfn, d1s, skip=sk0, q_cutoff=qc0)
 
     re_autorg = atsas_autorg(tfn, path=path)
-    re_gnom = atsas_datgnom(tfn, re_autorg["Rg"], first=skip+1,
-                            last=len(d1s.qgrid[d1s.qgrid<=q_cutoff]), fn_out=tfn_out, path=path)
-    try:
-        hdr,di,dq,dr,dpr,dpre = read_gnom_out_file(tfn_out)
-    except: # this would happen if gnom fails to run
-        hdr,di,dq,dr,dpr,dpre = 0,0,0,0,0,0
+    if re_autorg["Rg"]==0: # autorg not successful,py4xs.slnxs might work
+        re_autorg["I0"],re_autorg["Rg"],re_autorg["fit range"] = d1s.plot_Guinier(no_plot=True)
         
-    idx = (d1s.qgrid<q_cutoff)
-    ax[0].semilogy(di, dq)
-    ax[0].errorbar(d1s.qgrid[idx], d1s.data[idx], d1s.err[idx])
+    if skip<0:
+        sk0 = re_autorg["fit range"][0]
+    if q_cutoff<0 and re_autorg["Rg"]>0:
+        qc0 = 15./re_autorg["Rg"]
+
+    re_gnom = atsas_datgnom(tfn, re_autorg["Rg"], first=sk0+1,
+                            last=len(d1s.qgrid[d1s.qgrid<=qc0]), fn_out=tfn_out, path=path)
+    try:
+        hdr,dq,di,dr,dpr,dpre = read_gnom_out_file(tfn_out)
+    except: # this would happen if gnom fails to run
+        hdr,dq,di,dr,dpr,dpre = 0,0,0,0,0,0
+        
+    if plot_full_q_range:
+        idx = (dq>=d1s.qgrid[0])
+        ax[0].loglog(dq[idx], di[idx], zorder=2)
+        ax[0].errorbar(d1s.qgrid, d1s.data, d1s.err, fmt=".", alpha=0.3, zorder=1)
+    else:
+        idx = (d1s.qgrid<qc0)
+        ax[0].semilogy(dq, di, zorder=2)
+        ax[0].errorbar(d1s.qgrid[idx], d1s.data[idx], d1s.err[idx], fmt=".", alpha=0.3, zorder=1)
     #ax[0].yaxis.set_major_formatter(plt.NullFormatter())
     #ax[0].set_title("intensity")
     ax[0].set_xlabel(r"$q$")
@@ -307,18 +345,38 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, prin
         I0 = re_autorg["I0"]
         n1,n2 = re_autorg["fit range"]
         qf = d1s.qgrid[n1:n2]
-        gf = I0*np.exp(-(qf*Rg)**2/3)*2
-        idx = (d1s.qgrid<1.5/re_autorg["Rg"])
-        axx.errorbar(d1s.qgrid[idx]**2, d1s.data[idx]*2, d1s.err[idx], fmt="b.")
-        axx.plot(qf*qf, gf, "k")
-        axx.set_xlim(0, 3*(1.5/re_autorg["Rg"])**2)
-        axx.set_xlabel(r"$q^2$", loc='right')
-        locs = axx.get_xticks()
-        #if len(locs>6):
-        #    locs = locs[::2]
-        labels = [str(t) for t in locs]
-        axx.set_xticks(locs[:-2])
-        axx.set_xticklabels(labels[:-2])
+        if plot_full_q_range and Rg<50:
+            gf = I0*np.exp(-(qf*Rg)**2/3)/10
+            idx = (d1s.qgrid<1.5/re_autorg["Rg"])
+            axx.plot(qf*qf, gf, "k", zorder=2)
+            #axx.errorbar(d1s.qgrid[n1:n2]**2, d1s.data[n1:n2]/10, d1s.err[n1:n2], fmt="b.", alpha=0.6, zorder=1)
+            axx.errorbar(d1s.qgrid[idx]**2, d1s.data[idx]/10, d1s.err[idx]/10, fmt="b.", alpha=0.6, zorder=1)
+            qm2 = (1.5/re_autorg["Rg"])**2
+            axx.set_xlim(0, 4*qm2)
+            locs = axx.get_xticks()
+            locs = locs[locs<=2*qm2]
+            if len(locs>6):
+                locs = locs[::2]
+            labels = [str(t) for t in locs]
+            axx.set_xticks(locs) #[:-2])
+            axx.set_xticklabels(labels) #[:-2])
+            axx.set_xlabel(r"$q^2$", loc='right')
+        else:
+            qf = d1s.qgrid[n1:n2]
+            gf = I0*np.exp(-(qf*Rg)**2/3)
+            idx = (d1s.qgrid<1.5/re_autorg["Rg"])
+            axx.plot(qf*qf, gf, "k", zorder=2)
+            #axx.errorbar(d1s.qgrid[n1:n2]**2, d1s.data[n1:n2], d1s.err[n1:n2], fmt="b.", alpha=0.6, zorder=1)
+            axx.errorbar(d1s.qgrid[idx]**2, d1s.data[idx], d1s.err[idx], fmt="b.", alpha=0.6, zorder=1)
+            qm2 = (1.5/re_autorg["Rg"])**2
+            axx.set_xlim(-qm2, 1.2*qm2)
+            locs = axx.get_xticks()
+            if len(locs>6):
+                locs = locs[::2]
+            labels = [str(t) for t in locs if t>=0]
+            axx.set_xticks(locs[locs>=0])
+            axx.set_xticklabels(labels)
+            axx.set_xlabel(r"$q^2$", loc='left')
     
     if re_autorg["Rg"]==0:
         kratky_qm=0.3
@@ -329,7 +387,7 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, prin
         kratky_qm=10./re_autorg["Rg"]
         idx = (d1s.qgrid<kratky_qm)
         ax[1].plot(d1s.qgrid[idx]*re_autorg["Rg"], d1s.data[idx]*np.power(d1s.qgrid[idx], 2))
-        ax[1].set_xlabel(r"$q %times Rg$")    
+        ax[1].set_xlabel(r"$q \times R_g$")    
     ax[1].yaxis.set_major_formatter(plt.NullFormatter())
     ax[1].set_title("kratky plot")
 
@@ -359,6 +417,9 @@ def gen_pdf_report(fn):
     """ create a pdf file to summarize the static solution scattering data in the specified h5 file
     """
     dn = os.path.dirname(fn)
+    if dn == "":
+        dn = "."
+
     bn = os.path.basename(fn).split('.')
     if bn[-1]!='h5':
         raise Exception(f"{bn} does not appear to be a h5 file.")
@@ -367,14 +428,18 @@ def gen_pdf_report(fn):
     pn = lixtools.__path__
     if isinstance(pn, list):
         pn = pn[0]
-    ret = subprocess.run(["cp", f"{pn}/template_report.ipynb", f"{dn}/{bn}.ipynb"])
-    ret = subprocess.run(["sed", "-i", f"s/00template00/{bn}/g", f"{dn}/{bn}.ipynb"])    
-    subprocess.run(["jupyter", "nbconvert", 
-                    f"{dn}/{bn}.ipynb", f"--output=/tmp/{bn}.pdf", 
-                    "--ExecutePreprocessor.enabled=True", 
-                    "--TemplateExporter.exclude_input=True", "--to", "pdf"])    
-    subprocess.run(["mv", f"/tmp/{bn}.pdf", f"{dn}"])
-    subprocess.run(["rm", f"{dn}/{bn}.ipynb"])
+
+    print("preparing the notebook ...")
+    ret = run(["cp", f"{pn}/template_report.ipynb", f"{dn}/{bn}_report.ipynb"])
+    ret = run(["sed", "-i", f"s/00template00/{bn}/g", f"{dn}/{bn}_report.ipynb"])
+    print("executing ...")
+    ret = run(["jupyter", "nbconvert", 
+               f"{dn}/{bn}_report.ipynb", f"--output=/tmp/{bn}_report.pdf", 
+               "--ExecutePreprocessor.enabled=True", 
+               "--TemplateExporter.exclude_input=True", "--to", "pdf"])    
+    print("cleaning up ...")
+    ret = run(["mv", f"/tmp/{bn}_report.pdf", f"{dn}"])
+    ret = run(["rm", f"{dn}/{bn}_report.ipynb"])
 
 def create_uid():
     ww,mm,dd,tt,yy = time.asctime().split(' ')
