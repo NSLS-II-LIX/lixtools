@@ -1,4 +1,11 @@
 from py4xs.hdf import h5xs,lsh5
+import numpy as np
+import pylab as plt
+import json,time,copy
+
+from scipy.linalg import svd
+from scipy.interpolate import splrep,sproot,splev
+from scipy.ndimage.filters import gaussian_filter
 
 def qgrid_labels(qgrid):
     dq = qgrid[1]-qgrid[0]
