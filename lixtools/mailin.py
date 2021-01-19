@@ -220,11 +220,20 @@ def read_OT2_layout(plate_slots, holder_slots):
     the arguments should be a comma-separated list of slot positions on the Opentron deck
     e.g. "1,2"  
     """
-    cmd = ["ssh", "-i", "/home/xf16id/.ssh/ot2_ssh_key", "-o", "port=9999",
+    ssh_key = str(pathlib.Path.home())+"/.ssh/ot2_ssh_key"
+    if not os.path.isfile(ssh_key):
+        raise Exception(f"{ssh_key} does not exist!")
+
+    cmd = ["ssh", "-i", ssh_key, "-o", "port=9999",
            "root@localhost", "/var/lib/jupyter/notebooks/check_deck_config.py", 
            "-h", holder_slots, "-p", plate_slots]
-    
+
     ret = subprocess.run(cmd, capture_output=True)
+
+    if ret.returncode:
+        print(ret)
+        raise Exception("error executing check_deck_config.py")
+
     ldict = json.loads(ret.stdout.decode().split("*****")[-1])
     
     return ldict
