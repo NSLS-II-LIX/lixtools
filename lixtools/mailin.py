@@ -6,7 +6,7 @@ from os.path import dirname
 from barcode import generate,writer
 import PIL,openpyxl,subprocess,json
 import pylab as plt
-import glob,uuid,re
+import glob,uuid,re,pathlib,os
 import ipywidgets
 from IPython.display import display,clear_output
 

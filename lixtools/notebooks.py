@@ -89,7 +89,8 @@ def display_solHT_data(fn, atsas_path=""):
     axr.append(fig2.add_axes([0.09, 0.25, 0.25, 0.6])) 
     axr.append(fig2.add_axes([0.41, 0.25, 0.25, 0.6])) 
     axr.append(fig2.add_axes([0.73, 0.25, 0.25, 0.6])) 
-                                 
+    axr.append(axr[0].twiny())
+    
     def onChangeSample(w):
         sn = ddSample.value
         sel = [sampleLabels[i] for i in range(len(sampleLabels)) 

@@ -1,16 +1,19 @@
-import copy,subprocess,os,uuid,time,glob,lixtools
+import copy,subprocess,os,tempfile,re
+import uuid,time,glob,lixtools
 import numpy as np
 from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
 
-def run(cmd, path="", ignoreErrors=True, returnError=False):
+def run(cmd, path="", ignoreErrors=True, returnError=False, debug=False):
     """ cmd should be a list, e.g. ["ls", "-lh"]
         path is for the cmd, not the same as cwd
     """
     cmd[0] = path+cmd[0]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
+    if debug:
+        print(out.decode(), err.decode())
     if len(err)>0 and not ignoreErrors:
         print(err.decode())
         raise Exception(err.decode())
@@ -293,7 +296,9 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
         ax.append(fig.add_axes([0.09, 0.25, 0.25, 0.6])) 
         ax.append(fig.add_axes([0.41, 0.25, 0.25, 0.6])) 
         ax.append(fig.add_axes([0.73, 0.25, 0.25, 0.6])) 
+        ax.append(ax[0].twiny())
     else:
+        #ax[0].figure.cla()
         for a in ax:
             a.clear()
     
@@ -340,11 +345,11 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
     #ax[0].set_title("intensity")
     ax[0].set_xlabel(r"$q$")
     if re_autorg["Rg"]>0 and di is not None:
-        axx = ax[0].twiny()
         Rg = re_autorg["Rg"] 
         I0 = re_autorg["I0"]
         n1,n2 = re_autorg["fit range"]
         qf = d1s.qgrid[n1:n2]
+        axx = ax[3]
         if plot_full_q_range and Rg<50:
             gf = I0*np.exp(-(qf*Rg)**2/3)/10
             idx = (d1s.qgrid<1.5/re_autorg["Rg"])
@@ -429,17 +434,31 @@ def gen_pdf_report(fn):
     if isinstance(pn, list):
         pn = pn[0]
 
+    tmp_dir = tempfile.gettempdir()
+    fn0 = os.path.join(pn, f"template_report.ipynb")
+    fn1 = os.path.join(dn, f"{bn}_report.ipynb")
+        
     print("preparing the notebook ...")
-    ret = run(["cp", f"{pn}/template_report.ipynb", f"{dn}/{bn}_report.ipynb"])
-    ret = run(["sed", "-i", f"s/00template00/{bn}/g", f"{dn}/{bn}_report.ipynb"])
+    ret = run(["cp", fn0, fn1])
+    # sed only works with unix
+    #ret = run(["sed", "-i", f"s/00template00/{bn}/g", fn1])
+    with open(fn1, 'r+') as fh:
+        txt = fh.read()
+        txt = re.sub('00template00.h5', fn, txt)
+        fh.seek(0)
+        fh.write(txt)
+        fh.truncate()
+    
+    fn2 = os.path.join(tmp_dir, f"{bn}_report.pdf")
     print("executing ...")
     ret = run(["jupyter", "nbconvert", 
-               f"{dn}/{bn}_report.ipynb", f"--output=/tmp/{bn}_report.pdf", 
+               fn1, f"--output={fn2}", 
                "--ExecutePreprocessor.enabled=True", 
-               "--TemplateExporter.exclude_input=True", "--to", "pdf"])    
+               "--TemplateExporter.exclude_input=True", "--to", "pdf"],
+              debug=True)    
     print("cleaning up ...")
-    ret = run(["mv", f"/tmp/{bn}_report.pdf", f"{dn}"])
-    ret = run(["rm", f"{dn}/{bn}_report.ipynb"])
+    ret = run(["mv", fn2, dn])
+    ret = run(["rm", fn1])
 
 def create_uid():
     ww,mm,dd,tt,yy = time.asctime().split(' ')
@@ -459,8 +478,8 @@ def run_task(client, cmd, cwd, prerequire=[], shell=False, quiet=False):
                          stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
                          shell=shell, check=True, cwd=cwd, key=create_uid())
         
-#server_atsas_path = "/opt/apps/ATSAS/2.8.5-0"
-server_atsas_path = "/usr"
+#server_atsas_path = "/opt/apps/ATSAS/2.8.5-0/bin"
+server_atsas_path = "/usr/bin"
 
 def getNSD(msg):
     # msg is the output from supcomb 
@@ -548,7 +567,7 @@ def damaver(client, fns, cwd, prerequire, debug=False):
                 n1 = np.min([res_list[i], res_list[-1]])
                 n2 = np.max([res_list[i], res_list[-1]])
                 f = run_task(client,
-                             cmd=[f"{server_atsas_path}/bin/supcomb", 
+                             cmd=[os.path.join(server_atsas_path, "supcomb"), 
                                   fns[n1], fns[n2], 
                                   "-o", f"supcomb{n1}-{n2}.pdb"], 
                              cwd=cwd, quiet=True)
@@ -574,16 +593,18 @@ def damaver(client, fns, cwd, prerequire, debug=False):
     print("structures selected: ", selected)
 
     print("cleaning up ...")
-    fns_list = [[f"{cwd}/supcomb{selected[0]}-{i}.pdb", f"{cwd}/{fns[i][:-4]}r.pdb"] for i in selected[1:]]
+    fns_list = [[os.path.join(cwd, f"supcomb{selected[0]}-{i}.pdb"), 
+                 os.path.join(cwd, f"{fns[i][:-4]}r.pdb")] for i in selected[1:]]
     futures = [client.submit(os.rename, *fns) for fns in fns_list]
     client.gather(futures)
-    fn_list = client.submit(glob.glob, f"{cwd}/supcomb*-*.pdb").result()
+    fn_list = client.submit(glob.glob, 
+                            os.path.join(cwd, "supcomb*-*.pdb")).result()
     client.gather(client.submit(lambda x: [os.remove(x0) for x0 in x], fn_list))
 
     pdb_list = [fns[selected[0]]] + [f"{fns[i][:-4]}r.pdb" for i in selected[1:]]
-    client.gather(run_task(client, cmd=[f"{server_atsas_path}/bin/damaver"] + pdb_list, cwd=cwd))
-    client.gather(run_task(client, cmd=[f"{server_atsas_path}/bin/damfilt", "damaver.pdb"], cwd=cwd))
-    client.gather(run_task(client, cmd=[f"{server_atsas_path}/bin/damstart", "damaver.pdb"], cwd=cwd))
+    client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damaver")] + pdb_list, cwd=cwd))
+    client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damfilt"), "damaver.pdb"], cwd=cwd))
+    client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damstart"), "damaver.pdb"], cwd=cwd))
     
     return selected
     
@@ -603,7 +624,7 @@ def model_data(client, fn, rep=10, subdir=None):
         future = run_task(client, cmd=["mkdir", cwd], cwd="./")
         client.gather(future)
     
-    dammif_cmds = [[f"{server_atsas_path}/bin/dammif", "--mode=FAST", 
+    dammif_cmds = [[os.path.join(server_atsas_path, "dammif"), "--mode=FAST", 
                     f"--prefix={sn}-{i:02d}", f"../{dfn}"] for i in range(rep)]
     futures = [run_task(client, cmd=cmd, cwd=cwd) for cmd in dammif_cmds]
     
