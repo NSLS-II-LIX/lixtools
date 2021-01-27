@@ -15,8 +15,8 @@ def makeQRxls(fn, n=10):
     df = pd.DataFrame.from_dict(qdict)
     df.to_excel(fn, index=False)
     
-def make_barcode(proposal_id, SAF_id, plate_id, path="",
-                max_width=2.5, max_height=0.4):
+def make_barcode(proposal_id, SAF_id, plate_id, path="", max_width=2.5, max_height=0.4, 
+                 module_height=3.5, module_width=0.25, text_distance=0.5, font_size=10):
     """ proposal and SAF numbers are 6-digits 
         plate number can be an arbitrary identifier
     """
@@ -27,7 +27,8 @@ def make_barcode(proposal_id, SAF_id, plate_id, path="",
         raise Exception("Plate IDs should have 2 digits.")
     str_in = '-'.join(code)
     fp = BytesIO()
-    options = dict(module_height=3.5, module_width=0.25, text_distance=0.5, font_size=10)
+    options = dict(module_height=module_height, module_width=module_width, 
+                   text_distance=text_distance, font_size=font_size)
     generate('code128', str_in, writer=writer.ImageWriter(), output=fp, writer_options=options)
     img = PIL.Image.open(fp)
     dpi = max(img.size[0]/max_width, img.size[1]/max_height)
@@ -535,7 +536,8 @@ def parseSpreadsheet(infilename, sheet_name=0, strFields=[]):
     """ dropna removes empty rows
     """
     converter = {col: str for col in strFields} 
-    DataFrame = pd.read_excel(infilename, sheet_name=sheet_name, converters=converter)
+    DataFrame = pd.read_excel(infilename, sheet_name=sheet_name, 
+                              converters=converter, engine="openpyxl")
     DataFrame.dropna(axis=0, how='all', inplace=True)
     return DataFrame.to_dict()
 
