@@ -132,13 +132,17 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
                 futures.append(f)
                 #index.append([n1,n2])
     
+    #client.gather(futures)
     scores = np.zeros([ns, ns])
-    for future,result in as_completed(futures, with_results=True):
+    #for future,result in as_completed(futures, with_results=True):
+    for f in futures:
         #i1,i2 = index[i]
         #sc = score_func(futures[i].result().stdout.decode())
-        mfn = futures[i].result().stdout.decode()
-        # aligned_13-14 or aligned_13-14.pdb
+        mfn = f.result().args[-1]
+        # e.g. aligned_13-14 or aligned_13-14.pdb
         i1,i2 = np.asarray(mfn.strip(".pdb").strip("aligned_").split("-"), dtype=int)
+        #sc = score_func(futures[i].result().stdout.decode())
+        sc = score_func(f.result().stdout.decode())
         scores[i1][i2] = sc
         scores[i2][i1] = sc
         if debug:
@@ -164,7 +168,7 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
     
     print("averaging selected models ...")
     if use_denss:
-        client.gather(run_task(client, cmd=["denss.average.py", "-f", *model_list, "-o", "denss-avg"], cwd=cwd))
+        client.gather(run_task(client, cmd=["denss.average.py", "-f", *model_list, "-o", "denss"], cwd=cwd))
     else:
         client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damaver"), *model_list], cwd=cwd))
         client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damfilt"), "damaver.pdb"], cwd=cwd))
@@ -206,7 +210,7 @@ def model_data(client, fn, rep=20, subdir=None, use_denss=False):
     
     if use_denss:
         merge_models(client, [f"{sn}-{i:02d}.mrc" for i in range(rep)], cwd, futures, use_denss=True)
-        fns = ["denss-avg.mrc"]
+        fns = ["denss_avg.mrc"]
     else:
         #damaver(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures)
         merge_models(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures, use_denss=False)    
