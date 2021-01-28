@@ -1,0 +1,18 @@
+@page {
+    width: 80mm;
+    height: 120mm;
+    border: solid;
+    vertical-align: middle;
+}
+.img {
+    height: 30mm;
+    padding-top: 40mm;
+    padding-left: 25mm;
+    image-rendering: pixelated;
+}
+.label {
+    width: 80mm;
+    font-family: Arial, Verdana, Helvetica, sans;
+    text-align: center;
+    font-size: 10px;
+}

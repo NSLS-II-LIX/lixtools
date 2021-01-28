@@ -9,11 +9,34 @@ import pylab as plt
 import glob,uuid,re,pathlib,os
 import ipywidgets
 from IPython.display import display,clear_output
+from blabel import LabelWriter
+import webbrowser
 
 def makeQRxls(fn, n=10):
     qdict = {"UIDs" : [uuid.uuid4() for _ in  range(n)] }
     df = pd.DataFrame.from_dict(qdict)
     df.to_excel(fn, index=False)
+
+def make_plate_QR_code(proposal_id, SAF_id, plate_id, path=""):
+    """ depends on blabel
+        generate a pdf file, with plate outline
+    """
+    code = [str(proposal_id), str(SAF_id), str(plate_id)]
+    if len(code[0])!=6 or len(code[1])!=6:
+        raise Exception("Proposal and SAF IDs should each have 6 digits.")
+    if len(code[2])!=2:
+        raise Exception("Plate IDs should have 2 digits.")
+    str_in = '-'.join(code)
+    pdf_fn = str_in+".pdf"
+    if path!="":
+        pdf_fn = os.path.join(path, pdf_fn)
+
+    lixtools_dir = os.path.dirname(os.path.realpath(__file__))
+    label_writer = LabelWriter(os.path.join(lixtools_dir, "item_template.html"), 
+                               default_stylesheets=(os.path.join(lixtools_dir, "style.css"),))
+    records = [dict(sample_id = str_in),]
+    label_writer.write_labels(records, target=pdf_fn)
+    webbrowser.open(f'file:///{os.path.realpath(pdf_fn)}')
     
 def make_barcode(proposal_id, SAF_id, plate_id, path="", max_width=2.5, max_height=0.4, 
                  module_height=3.5, module_width=0.25, text_distance=0.5, font_size=10):
@@ -126,7 +149,8 @@ def validate_sample_list(xls_fn,
         msg.append(f"Consider consolidating the rows, more than two rows are half full.")
 
     if generate_barcode:
-        bcode,bcode_img = make_barcode(proposal_id, SAF_id, plate_id, dirname(xls_fn))
+        bcode,bcode_img = make_plate_QR_code(proposal_id, SAF_id, plate_id, dirname(xls_fn))
+        #bcode,bcode_img = make_barcode(proposal_id, SAF_id, plate_id, dirname(xls_fn))
         msg.append(f"writing barcode to {bcode}.pdf ...")
         #plt.imshow(bcode_img)
         display(bcode_img)
