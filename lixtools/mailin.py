@@ -9,8 +9,7 @@ import pylab as plt
 import glob,uuid,re,pathlib,os
 import ipywidgets
 from IPython.display import display,clear_output
-from blabel import LabelWriter
-import webbrowser
+import webbrowser,qrcode,base64
 
 def makeQRxls(fn, n=10):
     qdict = {"UIDs" : [uuid.uuid4() for _ in  range(n)] }
@@ -27,16 +26,24 @@ def make_plate_QR_code(proposal_id, SAF_id, plate_id, path=""):
     if len(code[2])!=2:
         raise Exception("Plate IDs should have 2 digits.")
     str_in = '-'.join(code)
-    pdf_fn = str_in+".pdf"
+    fn = f"plate_{str_in}.html"
     if path!="":
-        pdf_fn = os.path.join(path, pdf_fn)
+        fn = os.path.join(path, fn)
 
     lixtools_dir = os.path.dirname(os.path.realpath(__file__))
-    label_writer = LabelWriter(os.path.join(lixtools_dir, "item_template.html"), 
-                               default_stylesheets=(os.path.join(lixtools_dir, "style.css"),))
-    records = [dict(sample_id = str_in),]
-    label_writer.write_labels(records, target=pdf_fn)
-    webbrowser.open(f'file:///{os.path.realpath(pdf_fn)}')
+    template_fn = os.path.join(lixtools_dir, "plate_label_template.html")
+    with open(template_fn, "r") as fh:
+        txt = fh.read()
+    img = qrcode.make(str_in)
+    img_byte_arr = BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    bb = img_byte_arr.getvalue()
+    txt = txt.replace("**CODE**", str_in)
+    txt = txt.replace("**IMAGE**", base64.b64encode(bb).decode())
+    with open(fn, "w") as fh:
+        fh.write(txt)
+    webbrowser.open(f'file:///{os.path.realpath(fn)}')
+    
     
 def make_barcode(proposal_id, SAF_id, plate_id, path="", max_width=2.5, max_height=0.4, 
                  module_height=3.5, module_width=0.25, text_distance=0.5, font_size=10):
