@@ -44,6 +44,7 @@ def make_plate_QR_code(proposal_id, SAF_id, plate_id, path=""):
         fh.write(txt)
     webbrowser.open(f'file:///{os.path.realpath(fn)}')
     
+    return str_in
     
 def make_barcode(proposal_id, SAF_id, plate_id, path="", max_width=2.5, max_height=0.4, 
                  module_height=3.5, module_width=0.25, text_distance=0.5, font_size=10):
@@ -156,12 +157,12 @@ def validate_sample_list(xls_fn,
         msg.append(f"Consider consolidating the rows, more than two rows are half full.")
 
     if generate_barcode:
-        bcode,bcode_img = make_plate_QR_code(proposal_id, SAF_id, plate_id, dirname(xls_fn))
+        bcode = make_plate_QR_code(proposal_id, SAF_id, plate_id, dirname(xls_fn))
         #bcode,bcode_img = make_barcode(proposal_id, SAF_id, plate_id, dirname(xls_fn))
-        msg.append(f"writing barcode to {bcode}.pdf ...")
+        #msg.append(f"writing barcode to {bcode}.pdf ...")
         #plt.imshow(bcode_img)
-        display(bcode_img)
-        t=plt.axis(False)
+        #display(bcode_img)
+        #t=plt.axis(False)
         if sh_name!=bcode:
             msg.append(f"Renaming the sheet name to {bcode} ...")
             ss = openpyxl.load_workbook(xls_fn)
