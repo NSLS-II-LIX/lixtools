@@ -113,7 +113,6 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
         return
     
     futures = []
-    #index = []
     print("comparing models as they become available ...")
     res_list = []
     for future,result in as_completed(prerequire, with_results=True):
@@ -130,23 +129,18 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
                              cmd=align_cmd(fns, n1, n2), 
                              cwd=cwd, quiet=True)
                 futures.append(f)
-                #index.append([n1,n2])
     
-    #client.gather(futures)
     scores = np.zeros([ns, ns])
-    #for future,result in as_completed(futures, with_results=True):
     for f in futures:
-        #i1,i2 = index[i]
-        #sc = score_func(futures[i].result().stdout.decode())
         mfn = f.result().args[-1]
         # e.g. aligned_13-14 or aligned_13-14.pdb
         i1,i2 = np.asarray(mfn.strip(".pdb").strip("aligned_").split("-"), dtype=int)
-        #sc = score_func(futures[i].result().stdout.decode())
         sc = score_func(f.result().stdout.decode())
         scores[i1][i2] = sc
         scores[i2][i1] = sc
         if debug:
             print(f"score({i1:02d},{i2:02d}) = {sc:.3f}")
+
     # average score for each structure
     for i in range(ns):
         scores[i][i] = np.average([scores[i,j] for j in range(ns) if j!=i])
@@ -212,7 +206,6 @@ def model_data(client, fn, rep=20, subdir=None, use_denss=False):
         merge_models(client, [f"{sn}-{i:02d}.mrc" for i in range(rep)], cwd, futures, use_denss=True)
         fns = ["denss_avg.mrc"]
     else:
-        #damaver(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures)
         merge_models(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures, use_denss=False)    
         fns = ["damaver.pdb", "damfilt.pdb", "damstart.pdb"]
     # rename file to avoid future conflict
