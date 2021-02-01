@@ -1,4 +1,5 @@
 from py4xs.hdf import h5xs,lsh5
+from py4xs.slnxs import trans_mode,estimate_scaling_factor
 import numpy as np
 import pylab as plt
 import json,time,copy

@@ -130,17 +130,22 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
                              cwd=cwd, quiet=True)
                 futures.append(f)
     
+    #client.gather(futures)
     scores = np.zeros([ns, ns])
     for f in futures:
-        mfn = f.result().args[-1]
-        # e.g. aligned_13-14 or aligned_13-14.pdb
-        i1,i2 = np.asarray(mfn.strip(".pdb").strip("aligned_").split("-"), dtype=int)
-        sc = score_func(f.result().stdout.decode())
-        scores[i1][i2] = sc
-        scores[i2][i1] = sc
+        try:
+            res = f.result()
+            mfn = res.args[-1]
+            # e.g. aligned_13-14 or aligned_13-14.pdb
+            i1,i2 = np.asarray(mfn.strip(".pdb").strip("aligned_").split("-"), dtype=int)
+            sc = score_func(res.stdout.decode())
+            scores[i1][i2] = sc
+            scores[i2][i1] = sc
+        except:
+            print(res)
+            raise
         if debug:
             print(f"score({i1:02d},{i2:02d}) = {sc:.3f}")
-
     # average score for each structure
     for i in range(ns):
         scores[i][i] = np.average([scores[i,j] for j in range(ns) if j!=i])
@@ -154,11 +159,16 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
     print("structures selected: ", selected)
 
     print("saving selected models ...")
-    fns_list = [[os.path.join(cwd, f"aligned_{selected[0]:02d}-{i:02d}{fext}"), 
-                 os.path.join(cwd, f"{fns[i][:-4]}r{fext}")] for i in selected[1:]]
-    futures = [run_task(client, cmd=['cp', *fns], cwd=cwd) for fns in fns_list]
-    client.gather(futures)
-    model_list = [fns[selected[0]]] + [f"{fns[i][:-4]}r{fext}" for i in selected[1:]]
+    model_list = [fns[selected[0]]]
+    fns_list = []
+    for i in selected[1:]:
+        fn0 = os.path.join(cwd, f"aligned_{selected[0]:02d}-{i:02d}{fext}")
+        fn1 = os.path.join(cwd, f"{fns[i][:-4]}r{fext}")
+        if os.path.isfile(fn0):
+            fns_list.append([fn0, fn1]) 
+            model_list.append(fn0)
+        else:
+            print(f"Warning: {fn0} does not exist!")
     
     print("averaging selected models ...")
     if use_denss:
@@ -169,16 +179,21 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False):
         client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damstart"), "damaver.pdb"], cwd=cwd))
 
     print("cleaning up ...")        
-    fn_list = client.submit(glob.glob, 
-                            os.path.join(cwd, f"aligned_*-*{fext}")).result()
-    client.gather(client.submit(lambda x: [os.remove(x0) for x0 in x], fn_list))
+    client.gather([client.submit(os.rename, *fns) for fns in fns_list])
+    #futures = [run_task(client, cmd=['cp', *fns], cwd=cwd) for fns in fns_list]
+    #client.gather(futures)
+    #fn_list = client.submit(glob.glob, 
+    #                        os.path.join(cwd, f"aligned_*-*{fext}")).result()
+    #client.gather(client.submit(lambda x: [os.remove(x0) for x0 in x], fn_list))
     
     return selected
 
 
-def model_data(client, fn, rep=20, subdir=None, use_denss=False):
+def model_data(client, fn, rep=20, subdir=None, use_denss=False, 
+               dammif_args=["--mode=SLOW"], 
+               denss_args=["-m", "M", "-n", "48"]):
     """ repeat a bunch of dammif/denss runs
-        then run damaver/denss-avg on the results
+        then compare/merge on the results
     """
     
     if rep>99:
@@ -195,10 +210,10 @@ def model_data(client, fn, rep=20, subdir=None, use_denss=False):
     if use_denss:
         # must install denss first, already in PATH
         # use "M" mode to cover high-q data as recommanded by Tom Grant
-        model_cmds = [["denss.py", "-f", f"../{dfn}", "-m", "M", 
+        model_cmds = [["denss.py", "-f", f"../{dfn}", *denss_args, 
                        "-o", f"{sn}-{i:02d}"] for i in range(rep)]
     else:
-        model_cmds = [[os.path.join(server_atsas_path, "dammif"), "--mode=FAST",
+        model_cmds = [[os.path.join(server_atsas_path, "dammif"), *dammif_args,
                        f"--prefix={sn}-{i:02d}", f"../{dfn}"] for i in range(rep)]
     futures = [run_task(client, cmd=cmd, cwd=cwd) for cmd in model_cmds]
     
@@ -208,7 +223,7 @@ def model_data(client, fn, rep=20, subdir=None, use_denss=False):
     else:
         merge_models(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures, use_denss=False)    
         fns = ["damaver.pdb", "damfilt.pdb", "damstart.pdb"]
-    # rename file to avoid future conflict
+    # rename files to clarify data origin
     for fn in fns:
         client.gather(client.submit(os.rename, f"{cwd}/{fn}", f"{cwd}/{sn}-{fn}"))
 

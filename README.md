@@ -16,3 +16,5 @@ pdf report on static solution scattering data
 
 2021Jan:
 bug fixes for gen_pdf_report()
+new module for producing structural models; support for DENSS
+
