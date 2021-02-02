@@ -3,8 +3,9 @@ from dask.distributed import as_completed
 import numpy as np
 
 def create_uid():
-    ww,mm,dd,tt,yy = time.asctime().split(' ')
-    return f"{yy}{mm}{dd}-{tt}-{str(uuid.uuid4())[:8]}"
+    tt = time.localtime()
+    uid = f"{tt.tm_yday:03d}-{tt.tm_hour:02d}:{tt.tm_min:02d}:{tt.tm_sec:02d}-"
+    return uid+f"{str(uuid.uuid4())[:8]}"
 
 
 def run_task(client, cmd, cwd, prerequire=[], shell=False, quiet=False):

@@ -11,8 +11,16 @@ import ipywidgets
 from IPython.display import display,clear_output
 import webbrowser,qrcode,base64
 
+USE_SHORT_QR_CODE=True
+
+def getUID():
+    qstr = str(uuid.uuid4())
+    if USE_SHORT_QR_CODE:
+        return "-".join(qstr.split("-")[:-1])
+    return qstr
+
 def makeQRxls(fn, n=10):
-    qdict = {"UIDs" : [uuid.uuid4() for _ in  range(n)] }
+    qdict = {"UIDs" : [getUID() for _ in  range(n)] }
     df = pd.DataFrame.from_dict(qdict)
     df.to_excel(fn, index=False)
 
@@ -681,7 +689,7 @@ def validateHolderSpreadsheet(fn, proposal_id, SAF_id):
     ws1 = wb.create_sheet("UIDs")
     ws1.append(["holderName", "UID"])
     for i in range(len(hlist)):
-        ws1.append([hlist[i], str(uuid.uuid4())])
+        ws1.append([hlist[i], getUID()])
     wb.save(fn)
     
     print("Done.")
