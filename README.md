@@ -18,3 +18,6 @@ pdf report on static solution scattering data
 bug fixes for gen_pdf_report()
 new module for producing structural models; support for DENSS
 
+2020Feb:
+mailin: take existing labware dictionary for generate_docs()
+

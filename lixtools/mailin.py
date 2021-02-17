@@ -256,26 +256,29 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
 
     return slist,transfer_list,bdict
 
-def read_OT2_layout(plate_slots, holder_slots):
+def read_OT2_layout(plate_slots, holder_slots, msg=None):
     """ 
     the arguments should be a comma-separated list of slot positions on the Opentron deck
     e.g. "1,2"  
     """
-    ssh_key = str(pathlib.Path.home())+"/.ssh/ot2_ssh_key"
-    if not os.path.isfile(ssh_key):
-        raise Exception(f"{ssh_key} does not exist!")
+    if msg is None:
+        ssh_key = str(pathlib.Path.home())+"/.ssh/ot2_ssh_key"
+        if not os.path.isfile(ssh_key):
+            raise Exception(f"{ssh_key} does not exist!")
 
-    cmd = ["ssh", "-i", ssh_key, "-o", "port=9999",
-           "root@localhost", "/var/lib/jupyter/notebooks/check_deck_config.py", 
-           "-h", holder_slots, "-p", plate_slots]
+        cmd = ["ssh", "-i", ssh_key, "-o", "port=9999",
+               "root@localhost", "/var/lib/jupyter/notebooks/check_deck_config.py", 
+               "-h", holder_slots, "-p", plate_slots]
 
-    ret = subprocess.run(cmd, capture_output=True)
+        ret = subprocess.run(cmd, capture_output=True)
 
-    if ret.returncode:
-        print(ret)
-        raise Exception("error executing check_deck_config.py")
-
-    ldict = json.loads(ret.stdout.decode().split("*****")[-1])
+        if ret.returncode:
+            print(ret)
+            raise Exception("error executing check_deck_config.py")
+        
+        msg = ret.stdout.decode()
+            
+    ldict = json.loads(msg.split("*****")[-1])
     
     return ldict
 
@@ -307,8 +310,7 @@ def generate_measurement_spreadsheet(fn, slist, holders, bdict):
         df1.to_excel(writer, index=False, sheet_name=tname)
         df2.to_excel(writer, index=False, sheet_name="UIDs")
             
-
-def generate_docs(ot2_layout, xls_fns,    
+def generate_docs(ot2_layout, xls_fns, ldict=None,   
                   run_name="test",
                   b_lim=4,
                   plate_type = "corning_96_wellplate_360ul_flat",
@@ -324,8 +326,10 @@ def generate_docs(ot2_layout, xls_fns,
     print("Processing sample list(s) ...")
     slist,transfer_list,bdict = process_sample_lists(xls_fns, b_lim=b_lim)
     
-    print("Reading bar/QR codes, this might take a while ...")
-    ldict = read_OT2_layout(ot2_layout["plates"], ot2_layout["holders"])
+    if ldict is None:
+        print("Reading bar/QR codes, this might take a while ...")
+        ldict = read_OT2_layout(ot2_layout["plates"], ot2_layout["holders"])
+    
     print(ldict)
     
     holders = {}
