@@ -316,7 +316,8 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
                   plate_type = "corning_96_wellplate_360ul_flat",
                   holder_type = "lix_3x_holder_c",
                   tip_type = "opentrons_96_tiprack_300ul",
-                  flow_rate_aspirate = 50, flow_rate_dispense = 50
+                  flow_rate_aspirate = 50, flow_rate_dispense = 50, 
+                  bottom_clearance = 1
                  ):
     """ ot2_layout should be a dictionary:
             {"plates" : "1,2",
@@ -363,6 +364,7 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
         protocol.append(f"    lbw{slot} = ctx.load_labware('{tip_type}', '{slot}')\n")
         tips.append(f"lbw{slot}")
     protocol.append(f"    pipet = ctx.load_instrument('p300_single', 'left', tip_racks=[{','.join(tips)}])\n")
+    protocol.append(f"    pipet.well_bottom_clearance.aspirate = {bottom_clearance}\n")
     protocol.append(f"    pipet.flow_rate.aspirate = {flow_rate_aspirate}\n")
     protocol.append(f"    pipet.flow_rate.dispense = {flow_rate_dispense}\n")
 
