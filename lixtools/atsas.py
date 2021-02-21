@@ -330,17 +330,17 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
                             last=len(d1s.qgrid[d1s.qgrid<=qc0]), fn_out=tfn_out, path=path)
     try:
         hdr,dq,di,dr,dpr,dpre = read_gnom_out_file(tfn_out)
+        if plot_full_q_range:
+            idx = (dq>=d1s.qgrid[0])
+            ax[0].loglog(dq[idx], di[idx], zorder=2)
+            ax[0].errorbar(d1s.qgrid, d1s.data, d1s.err, fmt=".", alpha=0.3, zorder=1)
+        else:
+            idx = (d1s.qgrid<qc0)
+            ax[0].semilogy(dq, di, zorder=2)
+            ax[0].errorbar(d1s.qgrid[idx], d1s.data[idx], d1s.err[idx], fmt=".", alpha=0.3, zorder=1)
     except: # this would happen if gnom fails to run
-        hdr,dq,di,dr,dpr,dpre = 0,0,0,0,0,0
+        hdr,dq,di,dr,dpr,dpre = 0,0,None,0,0,0
         
-    if plot_full_q_range:
-        idx = (dq>=d1s.qgrid[0])
-        ax[0].loglog(dq[idx], di[idx], zorder=2)
-        ax[0].errorbar(d1s.qgrid, d1s.data, d1s.err, fmt=".", alpha=0.3, zorder=1)
-    else:
-        idx = (d1s.qgrid<qc0)
-        ax[0].semilogy(dq, di, zorder=2)
-        ax[0].errorbar(d1s.qgrid[idx], d1s.data[idx], d1s.err[idx], fmt=".", alpha=0.3, zorder=1)
     #ax[0].yaxis.set_major_formatter(plt.NullFormatter())
     #ax[0].set_title("intensity")
     ax[0].set_xlabel(r"$q$")
@@ -418,7 +418,7 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
         txt += f"MW estimate: {ret['datmow']['MW']/1000:.1f} kDa (MoW)"          
         return txt
     
-def gen_pdf_report(fn):
+def gen_report(fn):
     """ create a pdf file to summarize the static solution scattering data in the specified h5 file
     """
     dn = os.path.dirname(fn)
@@ -449,13 +449,13 @@ def gen_pdf_report(fn):
         fh.write(txt)
         fh.truncate()
     
-    fn2 = os.path.join(tmp_dir, f"{bn}_report.pdf")
+    fn2 = os.path.join(tmp_dir, f"{bn}_report.html")
     print("executing ...")
     ret = run(["jupyter", "nbconvert", 
                fn1, f"--output={fn2}", 
                "--ExecutePreprocessor.enabled=True", 
-               "--TemplateExporter.exclude_input=True", "--to", "pdf"],
-              debug=True)    
+               "--TemplateExporter.exclude_input=True", "--to", "html"],
+              debug=True)
     print("cleaning up ...")
     ret = run(["mv", fn2, dn])
     ret = run(["rm", fn1])

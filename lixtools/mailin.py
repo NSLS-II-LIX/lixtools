@@ -11,7 +11,7 @@ import ipywidgets
 from IPython.display import display,clear_output
 import webbrowser,qrcode,base64
 
-USE_SHORT_QR_CODE=True
+USE_SHORT_QR_CODE=False
 
 def getUID():
     qstr = str(uuid.uuid4())
