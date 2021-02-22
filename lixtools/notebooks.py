@@ -204,7 +204,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         
     def onChangeBlank(w):
         sel2 = [blankLabels[i] for i in range(len(blankLabels)) 
-                if dt2.attrs[ddBlank.value]['selected'][i]]
+                if dt1.attrs[ddBlank.value]['selected'][i]]   # dt2
         blAverageSM.value = sel2    
         updateAvgPlot(None)
         
@@ -219,9 +219,9 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         ax02.clear()
         sn2 = ddBlank.value
         sel2 = [(blankLabels[i] in blAverageSM.value) for i in range(len(blankLabels))]
-        d1a2 = avg_d1(dt2.d1s[sn2][field], sel2, ax02)
+        d1a2 = avg_d1(dt1.d1s[sn2][field], sel2, ax02)  # dt2
         if np.any(sel2 != dt1.attrs[sn2]['selected']):        
-            dt2.attrs[sn2]['selected'] = sel2
+            dt1.attrs[sn2]['selected'] = sel2   #dt2
             
         ax03.clear()
         if d1a1 is not None and d1a2 is not None:
@@ -230,6 +230,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         elif d1a1 is not None:
             d1fb = d1a1
             d1fb.plot(ax=ax03)
+        
         return d1fb
             
     def save_d1s(w):
@@ -241,8 +242,8 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         sn2 = ddBlank.value
         dt1.fh5[f'{sn1}/processed'].attrs['selected'] = dt1.attrs[sn1]['selected']
         dt1.fh5.flush()
-        dt2.fh5[f'{sn2}/processed'].attrs['selected'] = dt2.attrs[sn2]['selected']
-        dt2.fh5.flush()
+        #dt2.fh5[f'{sn2}/processed'].attrs['selected'] = dt2.attrs[sn2]['selected']
+        #dt2.fh5.flush()
         if sn1 in d1list.keys():
             del d1list[sn1]
         d1list[sn1] = d1fb
@@ -273,62 +274,12 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         d1f = onUpdatePlot(None)
         d1f.save(fn)
         
-    def set_trans(dh5, field, trans_field):
-        """ at LiX, the transmitted beam intensity (beam stop, em2_sum_all_mean_value) can be recorded
-            in two ways, the location of the data varies accordingly: (A) em2 as a detector, data under 
-            the "primary" stream, (B) em2 as a monitor, data under the 
-        """
-        sn = dh5.samples[0]
-        stlist = [_ for _ in list(dh5.fh5[sn].keys()) if trans_field in _]
-        if len(stlist)>0:
-            stream_name = stlist[0]   
-            for sn in dh5.samples:
-                # first interpolate the monitor counts
-                h = json.loads(dh5.fh5[sn].attrs["start"])
-                di = dh5.fh5[f"{sn}/{stream_name}/data/{trans_field}"][...]
-                dt = dh5.fh5[f"{sn}/{stream_name}/timestamps/{trans_field}"][...]
-                # this will interpolate the em values, maybe unnecessary, especially if em values
-                # are read more frequently than detector exposures 
-                #fi = interpolate.interp1d(dt, di)
-                if h['plan_name']=="raster":
-                    fast_axis = h["motors"][-1]
-                    dt1 = dh5.fh5[f"{sn}/primary/timestamps/{fast_axis}"][...].flatten()
-                    exp = dt1[1]-dt1[0]  # the exposure time needs to be added to the header 
-                    for i in range(len(dh5.d1s[sn][field])):
-                        t = dt1[i] # this is the time stamp on the trigger
-                        #trans = integrate.quad(fi, t, t+exp)[0]/exp
-                        ti1 = np.fabs(t-dt).argmin()
-                        ti2 = np.fabs(dt-(t+exp)).argmin()
-                        if ti2==ti1:
-                            trans = di[ti1]
-                        else:
-                            trans = np.sum(di[ti1:ti2])/(ti2-ti1)
-                        dh5.d1s[sn][field][i].set_trans(trans, transMode=trans_mode.external)
-                else:
-                    raise Exception(f"don't know how to handle plan: {h['plan_name']}")
-        else:
-            stream_name = "primary"      
-            for sn in dh5.samples:
-                for i in range(len(dh5.d1s[sn][field])):
-                    dh5.d1s[sn][field][i].set_trans(dh5.fh5[f'{sn}/{stream_name}/data/{trans_field}'][i], 
-                                                transMode=trans_mode.external)
-
     def avg_d1(d1s, selection, ax):
         d1sl = [d1s[i] for i in range(len(selection)) if selection[i]]
         if len(d1sl)==0:
             return None
         else:
             return d1sl[0].avg(d1sl[1:], plot_data=True, ax=ax, debug='quiet')
-    
-    #dt1 = h5xs(fn1)
-    #dt1.load_d1s()
-    #set_trans(dt1, field, trans_field)
-    #if fn2 is not None:
-    #    dt2 = h5xs(fn2)
-    #    dt2.load_d1s()    
-    #    set_trans(dt2, field, trans_field)
-    #else:
-    #    dt2 = dt1
     
     if isinstance(fns, str):
         fn = fns
@@ -340,10 +291,12 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         # create a temporary file to link to the individual files
         fn = "t.h5"
         create_linked_files(fn, fns)
-    dt1 = h5xs(fn)
+    
+    dt1 = h5xs(fn, transField=trans_field)
     dt1.load_d1s() 
-    set_trans(dt1, field, trans_field)
-    dt2 = dt1
+    dt1.set_trans()
+    dt1.average_d1s(filter_data=True, debug="quiet")
+    #dt2 = dt1
               
     d1list = {}
 
@@ -358,8 +311,8 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
 
     vbox1 = ipywidgets.VBox([ddSample, smAverageSM])                
     
-    ddBlank = ipywidgets.Dropdown(options=dt2.samples, value=dt2.samples[0], description='Blank:')
-    blankLabels = [f"frame #{i}" for i in range(len(dt2.attrs[dt2.samples[0]]['selected']))]
+    ddBlank = ipywidgets.Dropdown(options=dt1.samples, value=dt1.samples[-1], description='Blank:')
+    blankLabels = [f"frame #{i}" for i in range(len(dt1.attrs[dt1.samples[-1]]['selected']))]
     blAverageSM = ipywidgets.SelectMultiple(options=blankLabels, descripetion="selection for averaging")
     vbox2 = ipywidgets.VBox([ddBlank, blAverageSM])        
     
@@ -370,7 +323,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
     
     hbox1 = ipywidgets.HBox([vbox1, vbox2, vbox3])
 
-    fig = plt.figure(figsize=(12,4))
+    fig = plt.figure(figsize=(9,4))
     ax01 = fig.add_axes([0.1, 0.15, 0.23, 0.8])
     ax02 = fig.add_axes([0.4, 0.15, 0.23, 0.8])
     ax03 = fig.add_axes([0.7, 0.15, 0.23, 0.8])
