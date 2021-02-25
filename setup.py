@@ -14,7 +14,8 @@ setup(
     include_package_data=True,
     install_requires=['py4xs', 'numpy', 'pandas', 
                       'python-barcode', 'matplotlib', 'pillow', 
-                      'openpyxl>=3', 'xlrd', "qrcode"],
+                      'openpyxl>=3', 'xlrd', "qrcode", "MCR-Constraints"],
+    dependency_links=['git+ssh://git@github.com/xhqu1981/mcr_const#egg=MCR-Constraints'],
     python_requires='>=3.6',
     classifiers=[
         "Intended Audience :: Science/Research",
