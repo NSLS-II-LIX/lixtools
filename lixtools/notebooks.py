@@ -403,7 +403,7 @@ def display_HPLC_data(fn, atsas_path=""):
     """
     dt = h5sol_HPLC(fn)
     dt.load_d1s()
-    dt.set_trans()
+    dt.set_trans(transMode=trans_mode.from_waxs)
     dt.normalize_int()
 
     if "run_type" not in dt.fh5['/'].attrs.keys():
