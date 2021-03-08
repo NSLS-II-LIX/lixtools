@@ -271,12 +271,12 @@ def read_OT2_layout(plate_slots, holder_slots, msg=None):
                "-h", holder_slots, "-p", plate_slots]
 
         ret = subprocess.run(cmd, capture_output=True)
+        msg = ret.stdout.decode()
 
         if ret.returncode:
-            print(ret)
+            print(msg)
+            print(ret.stderr.decode())
             raise Exception("error executing check_deck_config.py")
-        
-        msg = ret.stdout.decode()
             
     ldict = json.loads(msg.split("*****")[-1])
     
