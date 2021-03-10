@@ -1,3 +1,4 @@
+import copy
 import json
 import time
 import types
@@ -174,6 +175,15 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
     step2_scaled_xs = mcrar.ST_opt_.copy()
     step2_rev_xs = step2_scaled_xs / scale_factor_on_qgrid
     plot_mcr_concentration_scattering_profile(self.qgrid, step2_conc, step2_rev_xs, ax2_conc, ax2_xs, specie_names)
+
+    dd2s = (step2_conc[1:].T @ step2_rev_xs[1:]).T  # leave water out
+    self.d1s[sn]['subtracted'] = []
+    for i in range(nf):
+        d1c = copy.deepcopy(self.d1s[sn]['merged'][i])
+        d1c.data = dd2s[:, i]
+        self.d1s[sn]['subtracted'].append(d1c)
+
+    self.save_d1s(sn, debug=debug)
 
     if debug is True:
         t2 = time.time()
