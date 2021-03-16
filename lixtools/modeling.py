@@ -2,6 +2,7 @@ import time,subprocess,os,uuid,glob
 from dask.distributed import as_completed
 from lixtools.atsas import extract_vals
 import numpy as np
+import re
 
 def create_uid():
     tt = time.localtime()
@@ -87,52 +88,61 @@ def align_using_supcomb(fns, n1, n2):
     return [os.path.join(server_atsas_path, "supcomb"),
             fns[n1], fns[n2], "-o", f"aligned_{n1:02d}-{n2:02d}.pdb"]
 
-def acccept_by_chi2(run_label, cwd, chi2_cutoff, use_denss):
+def accept_by_chi2(result, chi2_cutoff, prog_name):
     """ returns True is the chi sq value for the model is no higher than the cutoff
         the chi sq value can be found in the .log file for denss, and in the .fir file for atsas
     """
     if chi2_cutoff<0:
         return True
-    if use_denss: # chi2 in the .log file
-        fn = f"{run_label}.log"
-        cstr = "Chi2"
-    else: # Chi^2 in the .fir file, run_label is --prefix=label
-        fn = f"{run_label[9:]}.fir"
-        cstr = "Chi^2"
-    
-    ll = None
-    with open(fn, "r") as fh:
-        with open(fn, "r") as fh:
-            if cstr in line:
-                ll = line
-    if ll:
-        chi2 = extract_vals(ll)[-1]
-        if chi2<=chi2_cutoff:
-            return True 
+
+    for line in reversed(re.split("\n|\r", result.stdout.decode())):
+        blks = line.split()
+        if prog_name=="denss": 
+            if len(blks)>2:  
+                chi2 = float(blks[1])
+                break
+        elif prog_name=="dammin" and "Final Chi^2 against raw data" in line:
+            chi2 = float(blks[-1])
+            break
+        elif "gasbor" in prog_name and "Final Chi against raw data" in line:
+            chi2 = float(blks[-1])**2
+            break
+        elif prog_name=="dammif" and "Probability that the model fits the data" in line:
+            chi2 = float(blks[-1])
+            break
+        else:
+            chi2 = 0
+            
+    if chi2<=chi2_cutoff and prog_name!="dammif" or chi2>=chi2_cutoff and prog_name=="dammif":
+        print(line, ": accepted")
+        return chi2 
+
+    print(line, ": rejected")
     return False
     
 
-def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False, chi2_cutoff=-1):
+def merge_models(client, fns, cwd, prerequire, prog_name="dammif", debug=False, chi2_cutoff=-1):
     """ loop over model_i, model_j:
             supcomb/denss.align model_i model_j
         assemble score table (NSD for supcomb, 1-Score for denss.align)
         discard files with score > Mean + 2*Standard deviation (damaver/damsel manual, also recommended by TG)
         average selected/aligned models 
-        post-processing: damfilt damaver.pdb, damstart damaver.pdb    
+        post-processing: damfilt damaver.pdb, damstart damaver.pdb   
     """
-    if use_denss:
+
+    if prog_name=="denss":
         score_func = getScore
         align_cmd = align_using_denss
         fext = ".mrc"
         # prefix is the last input, last two digits are the seq number
-        # ["denss.py", "-f", f"../{dfn}", *denss_args, "-o", f"{sn}-{i:02d}"]
+        # ["denss.py", "-f", f"../{dfn}", *args, "-o", f"{sn}-{i:02d}"]
         i_prefix = -1
     else:
         score_func = getNSD
         align_cmd = align_using_supcomb
         fext = ".pdb"
         # prefix is the last input, last two digits are the seq number
-        # [os.path.join(server_atsas_path, atsas_args[0]), f"../{dfn}", *atsas_args[1:], f"--prefix={sn}-{i:02d}"]
+        # [os.path.join(server_atsas_path, args[0]), f"../{dfn}", *args[1:], f"--prefix={sn}-{i:02d}"]
         i_prefix = -1
     
     ns = len(fns)
@@ -144,9 +154,9 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False, chi
     res_list = []
     for future,result in as_completed(prerequire, with_results=True):
         res_no = int(result.args[i_prefix][-2:])
-        if accept_by_chi2(result.args[i_prefix], cwd, chi2_cutoff, use_denss):
-            res_list.append(res_no)
         print(f"model #{res_no:02d} completed ...")
+        if accept_by_chi2(result, chi2_cutoff, prog_name):
+            res_list.append(res_no)
         n = len(res_list)
         if n>2:
             for i in range(n-1):
@@ -158,8 +168,15 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False, chi
                              cwd=cwd, quiet=True)
                 futures.append(f)
     
+    if len(res_list)==0:
+        print("no valid models were found ...")
+        return []
+    elif len(res_list)==1:
+        print(f"the only valid model is #{res_list[0]}")
+        return [res_list]
+    
     #client.gather(futures)
-    scores = np.zeros([ns, ns])
+    scores = np.ones([ns, ns])   # rejected models will have score of 1
     for f in futures:
         try:
             res = f.result()
@@ -176,13 +193,15 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False, chi
             print(f"score({i1:02d},{i2:02d}) = {sc:.3f}")
     # average score for each structure
     for i in range(ns):
-        scores[i][i] = np.average([scores[i,j] for j in range(ns) if j!=i])
+        if i in res_list:
+            scores[i][i] = np.average([scores[i,j] for j in range(ns) 
+                                       if j!=i and scores[i,j]<1])
 
     # exclude structures with score>avg(score)+2*std
     dd = scores.diagonal()
     if debug:
         print("averaged scores:", dd)
-    cutoff = np.average(dd)+np.std(dd)*2
+    cutoff = np.average(dd[dd<1])+np.std(dd[dd<1])*2
     selected = [i for i in range(ns) if dd[i]<cutoff]
     print("structures selected: ", selected)
 
@@ -199,7 +218,7 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False, chi
             print(f"Warning: {fn0} does not exist!")
     
     print("averaging selected models ...")
-    if use_denss:
+    if prog_name=="denss":
         client.gather(run_task(client, cmd=["denss.average.py", "-f", *model_list, "-o", "denss"], cwd=cwd))
     else:
         client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damaver"), *model_list], cwd=cwd))
@@ -217,16 +236,19 @@ def merge_models(client, fns, cwd, prerequire, debug=False, use_denss=False, chi
     return selected
 
 
-def model_data(client, fn, rep=20, subdir=None, use_denss=False, 
-               args=["dammif", "--mode=SLOW"], chi2_cutoff=-1): 
+def model_data(client, fn, rep=20, subdir=None, prog_name="dammif", 
+               args=["--mode=SLOW"], chi2_cutoff=-1): 
     """ repeat a bunch of dammif/dammin/gasbor/denss runs
-        when using atsas, the first atsas_args should be the modeling program to be used:
-            e.g. args=["dammif", "--mode=SLOW", "--anisometry=O", "--symmetry=P6"]
-        when using denss:
-            e.g. args=["-m", "M", "-n", "48", "-ncs", "6", "-ncs_axis", "3"])
+        Examples:
+            prog_name="dammif", ["--mode=SLOW", "--anisometry=O", "--symmetry=P6"]
+            prog_name="denss", args=["-m", "M", "-n", "48", "-ncs", "6", "-ncs_axis", "3"])
         then compare/merge on the results
+        prog_name must be one of ["denss", "dammif", "dammin", "gasborp", "gasbori"]
+        NOTE: for dammif chi2_cutoff is the lower limit for the model fitness
     """
-    
+    if not prog_name in ["denss", "dammif", "dammin", "gasborp", "gasbori"]:
+        raise Exception(f"{prog_name} is not a supported modeling program.")
+        
     if rep>99:
         rep = 99
     dfn = os.path.basename(fn)            # data file name
@@ -238,29 +260,33 @@ def model_data(client, fn, rep=20, subdir=None, use_denss=False,
         future = run_task(client, cmd=["mkdir", cwd], cwd="./")
         client.gather(future)
     
-    if use_denss:
+    if prog_name=="denss":
         # must install denss first, already in PATH
         # use "M" mode to cover high-q data as recommanded by Tom Grant
-        model_cmds = [["denss.py", "-f", f"../{dfn}", *denss_args, 
+        model_cmds = [["denss.py", "-f", f"../{dfn}", *args, 
                        "-o", f"{sn}-{i:02d}"] for i in range(rep)]
     else:
-        if not atsas_args[0] in ["dammin", "dammif", "gasborp", "gasbori"]:
-            raise exception(f"{atsas_args[0]} is not a supported ATSAS modeling tool.")
-        model_cmds = [[os.path.join(server_atsas_path, atsas_args[0]), f"../{dfn}", *atsas_args[1:],
-                       f"--prefix={sn}-{i:02d}"] for i in range(rep)]
+        if prog_name=="dammif":
+            lb = "--prefix"
+        else:
+            lb = "--lo"
+        model_cmds = [[os.path.join(server_atsas_path, prog_name), f"../{dfn}", *args,
+                       f"{lb}={sn}-{i:02d}"] for i in range(rep)]
     futures = [run_task(client, cmd=cmd, cwd=cwd) for cmd in model_cmds]
     
-    if use_denss:
-        merge_models(client, [f"{sn}-{i:02d}.mrc" for i in range(rep)], cwd, futures, 
-                     use_denss=True, chi2_cutoff=chi2_cutoff)
+    if prog_name=="denss":
+        slist = merge_models(client, [f"{sn}-{i:02d}.mrc" for i in range(rep)], cwd, futures,
+                             prog_name, chi2_cutoff=chi2_cutoff)
         fns = ["denss_avg.mrc"]
     else:
-        merge_models(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures, 
-                     use_denss=False, chi2_cutoff=chi2_cutoff)    
+        slist = merge_models(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures,
+                             prog_name, chi2_cutoff=chi2_cutoff)    
         fns = ["damaver.pdb", "damfilt.pdb", "damstart.pdb"]
+    
     # rename files to clarify data origin
-    for fn in fns:
-        client.gather(client.submit(os.rename, f"{cwd}/{fn}", f"{cwd}/{sn}-{fn}"))
+    if len(slist)>1:
+        for fn in fns:
+            client.gather(client.submit(os.rename, f"{cwd}/{fn}", f"{cwd}/{sn}-{fn}"))
 
     print("done")
     
