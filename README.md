@@ -21,3 +21,5 @@ new module for producing structural models; support for DENSS
 2020Feb:
 mailin: take existing labware dictionary for generate_docs()
 
+2020Mar:
+other atsas tools for model_data(); chi2 cutoff 
