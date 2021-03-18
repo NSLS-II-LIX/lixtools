@@ -524,19 +524,19 @@ def display_HPLC_data(fn, atsas_path=""):
     # Begin MCR widgets
     peakGuessTx = ipywidgets.Text(value=HPLC_GUI_par['peak_guess'],
                                   description='peak guess frames:',
-                                  layout=ipywidgets.Layout(width='30%'),
+                                  layout=ipywidgets.Layout(width='60%'),
                                   style={'description_width': 'initial'})
     halfWidthTx = ipywidgets.Text(value=HPLC_GUI_par['half_width'],
                                   description='max half width:',
-                                  layout=ipywidgets.Layout(width='15%'),
+                                  layout=ipywidgets.Layout(width='40%'),
                                   style={'description_width': 'initial'})
     guinierQTx = ipywidgets.Text(value=HPLC_GUI_par['guinier_q'],
                                  description='quinier q ranges:',
-                                 layout=ipywidgets.Layout(width='40%'),
+                                 layout=ipywidgets.Layout(width='60%'),
                                  style={'description_width': 'initial'})
     gradThreshTx = ipywidgets.Text(value=HPLC_GUI_par['grad_thresh'],
                                    description='gradient thresh:',
-                                   layout=ipywidgets.Layout(width='15%'),
+                                   layout=ipywidgets.Layout(width='40%'),
                                    style={'description_width': 'initial'})
 
     optMet1Dd = ipywidgets.Dropdown(options=['dogbox', 'trf', 'lm'],
@@ -550,7 +550,9 @@ def display_HPLC_data(fn, atsas_path=""):
                                     layout=ipywidgets.Layout(width='50%'),
                                     style={'description_width': 'initial'})
 
-    hbox32c = ipywidgets.HBox([peakGuessTx, halfWidthTx, guinierQTx, gradThreshTx])
+    hbox321c = ipywidgets.HBox([peakGuessTx, halfWidthTx])
+    hbox322c = ipywidgets.HBox([guinierQTx, gradThreshTx])
+    hbox32c = ipywidgets.VBox([hbox321c, hbox322c])
     hbox32d = ipywidgets.HBox([optMet1Dd, optMet2Dd])
     # End MCR widgets
     
