@@ -15,7 +15,7 @@ from pymcr.mcr import NNLS, McrAR
 from lixtools.hdf import h5sol_HPLC
 
 
-def plot_mcr_concentration_scattering_profile(qgrid, conc, xs, ax_conc, ax_xs, specie_names):
+def plot_mcr_concentration_scattering_profile(qgrid, conc, xs, ax_conc, ax_xs, specie_names, step_name="Step 1"):
     colors = sns.color_palette("Dark2", conc.shape[0])
     ax_protein_conc = ax_conc.twinx()
     for i, conc in enumerate(conc):
@@ -35,7 +35,7 @@ def plot_mcr_concentration_scattering_profile(qgrid, conc, xs, ax_conc, ax_xs, s
     ax_protein_conc.spines['top'].set_visible(False)
     ax_protein_conc.legend()
     ax_protein_conc.set_ylabel("Protein")
-    title = "Concentration --- Step 1"
+    title = f"Concentration --- {step_name}"
     ax_conc.set_title(title)
 
     plt.figure()
@@ -53,7 +53,7 @@ def plot_mcr_concentration_scattering_profile(qgrid, conc, xs, ax_conc, ax_xs, s
     ax_xs.set_ylabel("Intensity")
     ax_xs.set_yscale("log")
     ax_xs.set_xscale("log")
-    title = "XS --- Step 1".format(len(conc))
+    title = f"XS --- {step_name}"
     ax_xs.set_title(title)
     ax_xs.set_ylim([xs[1:len(specie_names)].min() * 0.5, xs[1:1 + len(specie_names)].max() * 2])
 
@@ -160,7 +160,8 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
     step1_conc = mcrar.C_opt_.T.copy() / step1_shared_pf.prefactor
     step1_scaled_xs = mcrar.ST_opt_.copy()
     step1_rev_xs = step1_scaled_xs / scale_factor_on_qgrid
-    plot_mcr_concentration_scattering_profile(self.qgrid, step1_conc, step1_rev_xs, ax1_conc, ax1_xs, specie_names)
+    plot_mcr_concentration_scattering_profile(self.qgrid, step1_conc, step1_rev_xs, ax1_conc, ax1_xs, specie_names,
+                                              step_name="Step 1")
 
     # Step2 MCR, Enforce Guinier Constraint
     step2_xs_guess = generate_step2_xs_guess(step1_rev_xs, self.qgrid, guinier_q_ranges, grad_threshes,
@@ -174,7 +175,8 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
     step2_conc = mcrar.C_opt_.T.copy() / step2_shared_pf.prefactor
     step2_scaled_xs = mcrar.ST_opt_.copy()
     step2_rev_xs = step2_scaled_xs / scale_factor_on_qgrid
-    plot_mcr_concentration_scattering_profile(self.qgrid, step2_conc, step2_rev_xs, ax2_conc, ax2_xs, specie_names)
+    plot_mcr_concentration_scattering_profile(self.qgrid, step2_conc, step2_rev_xs, ax2_conc, ax2_xs, specie_names,
+                                              step_name="Step 2")
 
     dd2s = (step2_conc[1:].T @ step2_rev_xs[1:]).T  # leave water out
     self.d1s[sn]['subtracted'] = []
