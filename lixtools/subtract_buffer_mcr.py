@@ -30,6 +30,7 @@ def plot_mcr_concentration_scattering_profile(qgrid, conc, xs, ax_conc, ax_xs, s
     ax_conc.tick_params(labeltop=False)
     ax_conc.set_ylabel("Water")
     ax_conc.legend(loc='upper left')
+    ax_conc.set_xlabel("Frame #")
     ax_protein_conc.xaxis.tick_bottom()
     ax_protein_conc.set_xlabel("Frame #")
     ax_protein_conc.spines['top'].set_visible(False)
