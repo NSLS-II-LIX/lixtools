@@ -10,6 +10,9 @@ from lixtools.atsas import gen_atsas_report
 import pylab as plt
 from scipy import interpolate,integrate
 
+from lixtools.subtract_buffer_mcr import bind_subtract_buffer_mcr
+
+
 def display_solHT_data(fn, atsas_path=""):
     """ atsas_path for windows might be c:\atsas\bin
     """
@@ -376,7 +379,13 @@ HPLC_GUI_par = {
     'sc_factor': 0.995,
     'SVD_fw': '1, 1.5',
     'frns_export': '100-110',
-    'export_all': False
+    'export_all': False,
+    'peak_guess': '125, 140',
+    'half_width': '15, 13',
+    'guinier_q': '[0.08, 0.11], [0.15, 0.15]',
+    'grad_thresh': '100.0, 10.0',
+    'opt_method_step1': 'dogbox',
+    'opt_method_step2': 'trf',
 }              
               
               
@@ -402,6 +411,7 @@ def display_HPLC_data(fn, atsas_path=""):
 
     """
     dt = h5sol_HPLC(fn)
+    dt = bind_subtract_buffer_mcr(dt)
     dt.load_d1s()
     dt.set_trans(transMode=trans_mode.from_waxs)
     dt.normalize_int()
@@ -472,7 +482,7 @@ def display_HPLC_data(fn, atsas_path=""):
     
     # vbox3, backgorund subtraction, export
     vb3Lb = ipywidgets.Label(value="subtraction:")
-    subModeDd = ipywidgets.Dropdown(options=['normal', 'SVD'], 
+    subModeDd = ipywidgets.Dropdown(options=['normal', 'SVD', "MCR"],
                                     value=HPLC_GUI_par['sub_mode'],
                                     description='mode of subtraction:',
                                     layout=ipywidgets.Layout(width='65%'),
@@ -509,7 +519,40 @@ def display_HPLC_data(fn, atsas_path=""):
                                     style = {'description_width': 'initial'})
 
     hbox32a = ipywidgets.HBox([frnsSubTx, ncTx, polyNTx]) 
-    hbox32b = ipywidgets.HBox([slideScFactor, filterWidthTx]) 
+    hbox32b = ipywidgets.HBox([slideScFactor, filterWidthTx])
+
+    # Begin MCR widgets
+    peakGuessTx = ipywidgets.Text(value=HPLC_GUI_par['peak_guess'],
+                                  description='peak guess frames:',
+                                  layout=ipywidgets.Layout(width='30%'),
+                                  style={'description_width': 'initial'})
+    halfWidthTx = ipywidgets.Text(value=HPLC_GUI_par['half_width'],
+                                  description='max half width:',
+                                  layout=ipywidgets.Layout(width='15%'),
+                                  style={'description_width': 'initial'})
+    guinierQTx = ipywidgets.Text(value=HPLC_GUI_par['guinier_q'],
+                                 description='quinier q ranges:',
+                                 layout=ipywidgets.Layout(width='40%'),
+                                 style={'description_width': 'initial'})
+    gradThreshTx = ipywidgets.Text(value=HPLC_GUI_par['grad_thresh'],
+                                   description='gradient thresh:',
+                                   layout=ipywidgets.Layout(width='15%'),
+                                   style={'description_width': 'initial'})
+
+    optMet1Dd = ipywidgets.Dropdown(options=['dogbox', 'trf', 'lm'],
+                                    value=HPLC_GUI_par['opt_method_step1'],
+                                    description='Step 1 Opt Method:',
+                                    layout=ipywidgets.Layout(width='50%'),
+                                    style={'description_width': 'initial'})
+    optMet2Dd = ipywidgets.Dropdown(options=['dogbox', 'trf', 'lm'],
+                                    value=HPLC_GUI_par['opt_method_step2'],
+                                    description='Step 2 Opt Method:',
+                                    layout=ipywidgets.Layout(width='50%'),
+                                    style={'description_width': 'initial'})
+
+    hbox32c = ipywidgets.HBox([peakGuessTx, halfWidthTx, guinierQTx, gradThreshTx])
+    hbox32d = ipywidgets.HBox([optMet1Dd, optMet2Dd])
+    # End MCR widgets
     
     
     btnExport = ipywidgets.Button(description='Export', 
@@ -526,7 +569,7 @@ def display_HPLC_data(fn, atsas_path=""):
     
     hbox33 = ipywidgets.HBox([btnExport, frnsExportTx])  #, exportAllCB])      
                         
-    vbox3 = ipywidgets.VBox([vb3Lb, hbox31, hbox32a, hbox32b, hbox33], 
+    vbox3 = ipywidgets.VBox([vb3Lb, hbox31, hbox32a, hbox32b, hbox32c, hbox32d, hbox33],
                             layout=ipywidgets.Layout(width='45%'))
     
     btnReport = ipywidgets.Button(description='ATSAS report') #, layout=ipywidgets.Layout(width='20%'))
@@ -569,6 +612,12 @@ def display_HPLC_data(fn, atsas_path=""):
         HPLC_GUI_par['SVD_fw'] = filterWidthTx.value
         HPLC_GUI_par['frns_export'] = frnsExportTx.value
         #HPLC_GUI_par['export_all'] = exportAllCB.value
+        HPLC_GUI_par['peak_guess'] = peakGuessTx.value
+        HPLC_GUI_par['half_width'] = halfWidthTx.value
+        HPLC_GUI_par['guinier_q'] = guinierQTx.value
+        HPLC_GUI_par['grad_thresh'] = gradThreshTx.value
+        HPLC_GUI_par['opt_method_step1'] = optMet1Dd.value
+        HPLC_GUI_par['opt_method_step2'] = optMet2Dd.value
     
     def updatePlot(w):
         fig1.clear()
@@ -622,7 +671,7 @@ def display_HPLC_data(fn, atsas_path=""):
             fig2.clear()
             dt.subtract_buffer(buffer_frame_range=frnsSubTx.value, 
                                sc_factor=slideScFactor.value)
-        else: # SVD
+        elif subModeDd.value=="SVD": # SVD
             fig2.clear()
             ax2a = fig2.add_subplot(121)
             ax2b = fig2.add_subplot(122)
@@ -648,6 +697,26 @@ def display_HPLC_data(fn, atsas_path=""):
                                   Nc = int(ncTx.value), fit_with_polynomial=True, 
                                   poly_order=polyN,
                                   plot_fit=True, ax1=ax2a, ax2=ax2b)
+            plt.show(fig2)
+            plt.tight_layout()
+        else:
+            assert subModeDd.value=="MCR"
+            fig2.clear()
+            ax1_xs = fig2.add_subplot(221)
+            ax1_conc = fig2.add_subplot(222)
+            ax2_xs = fig2.add_subplot(223)
+            ax2_conc = fig2.add_subplot(224)
+            dt.subtract_buffer_MCR(
+                peak_pos_guess=peakGuessTx.value,
+                max_half_width=halfWidthTx.value,
+                iframe_bg=int(frnsSubTx.value.split('-')[1]),
+                guinier_q_ranges=guinierQTx.value,
+                grad_threshes=gradThreshTx.value,
+                opt_methods=(optMet1Dd.value, optMet2Dd.value),
+                ax1_xs=ax1_xs,
+                ax1_conc=ax1_conc,
+                ax2_xs=ax2_xs,
+                ax2_conc=ax2_conc)
             plt.show(fig2)
             plt.tight_layout()
         
