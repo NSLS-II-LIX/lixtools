@@ -704,6 +704,7 @@ def display_HPLC_data(fn, atsas_path=""):
         else:
             assert subModeDd.value=="MCR"
             fig2.clear()
+            fig2.subplots_adjust(hspace=1.0)
             ax1_xs = fig2.add_subplot(221)
             ax1_conc = fig2.add_subplot(222)
             ax2_xs = fig2.add_subplot(223)
