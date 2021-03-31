@@ -101,12 +101,12 @@ def accept_by_chi2(result, chi2_cutoff, prog_name):
             if len(blks)>2:  
                 chi2 = float(blks[1])
                 break
-        elif prog_name=="dammin" and "Final Chi^2 against raw data" in line:
+        elif prog_name in ["dammin", "gasbori", "gasborp"] and "Final Chi^2 against raw data" in line:
             chi2 = float(blks[-1])
             break
-        elif "gasbor" in prog_name and "Final Chi against raw data" in line:
-            chi2 = float(blks[-1])**2
-            break
+        #elif "gasbor" in prog_name and "Final Chi against raw data" in line:
+        #    chi2 = float(blks[-1])**2
+        #    break
         elif prog_name=="dammif" and "Probability that the model fits the data" in line:
             chi2 = float(blks[-1])
             break
