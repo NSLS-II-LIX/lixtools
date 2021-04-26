@@ -118,7 +118,8 @@ def generate_step2_xs_guess(step1_unscale_xs, qgrid, q_fit_ranges, grad_threshes
     return xs_guess
 
 
-def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_bg: int, guinier_q_ranges: str,
+def subtract_buffer_mcr(dd2s, qgrid, 
+                        peak_pos_guess: str, max_half_width: str, iframe_bg: int, guinier_q_ranges: str,
                         grad_threshes: str,
                         opt_methods=('dogbox', 'trf'),
                         scale_exp: float = 3.0, max_height: float = 0.05, max_mcr_q: float = 0.6,
@@ -126,6 +127,7 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
                         mcr_tol_increase_1: float = 2.0, mcr_max_iter_1: int = 20,
                         mcr_tol_increase_2: float = 100.0, mcr_max_iter_2: int = 20,
                         sn=None, ax1_xs=None, ax1_conc=None, ax2_xs=None, ax2_conc=None, debug=False):
+    
     peak_pos_guess = json.loads(f'[{peak_pos_guess}]')
     max_half_width = json.loads(f'[{max_half_width}]')
     guinier_q_ranges = json.loads(f'[{guinier_q_ranges}]')
@@ -137,18 +139,16 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
     assert len(guinier_q_ranges[0]) == 2
     assert len(grad_threshes) == len(peak_pos_guess)
 
-    fh5, sn = self.process_sample_name(sn, debug=debug)
-    t1 = time.time()
-    if debug is True:
-        print("start processing: subtract_buffer()")
-
-    nf = len(self.d1s[sn]['merged'])
-    dd2s = np.vstack([d1.data for d1 in self.d1s[sn]['merged']]).T  # (q, frame)
-    scale_factor_on_qgrid = self.qgrid ** scale_exp
-    scale_factor_on_qgrid[self.qgrid > max_mcr_q] *= out_bound_scale
+    nf = dd2s.shape[1]
+    scale_factor_on_qgrid = qgrid ** scale_exp
+    scale_factor_on_qgrid[qgrid > max_mcr_q] *= out_bound_scale
     xs_scaled = dd2s.T * scale_factor_on_qgrid
     specie_names = ['Water'] + \
                    [f"Protein {i}" for i in range(1, len(peak_pos_guess) + 1)]
+
+    t1 = time.time()
+    if debug is True:
+        print("start processing: performing MCR ...")
 
     # Step1 MCR, No Guinier Constraint
     step1_xs_guess = xs_scaled[[iframe_bg] + peak_pos_guess]
@@ -161,14 +161,14 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
     step1_conc = mcrar.C_opt_.T.copy() / step1_shared_pf.prefactor
     step1_scaled_xs = mcrar.ST_opt_.copy()
     step1_rev_xs = step1_scaled_xs / scale_factor_on_qgrid
-    plot_mcr_concentration_scattering_profile(self.qgrid, step1_conc, step1_rev_xs, ax1_conc, ax1_xs, specie_names,
+    plot_mcr_concentration_scattering_profile(qgrid, step1_conc, step1_rev_xs, ax1_conc, ax1_xs, specie_names,
                                               step_name="Step 1")
 
     # Step2 MCR, Enforce Guinier Constraint
-    step2_xs_guess = generate_step2_xs_guess(step1_rev_xs, self.qgrid, guinier_q_ranges, grad_threshes,
+    step2_xs_guess = generate_step2_xs_guess(step1_rev_xs, qgrid, guinier_q_ranges, grad_threshes,
                                              scale_factor_on_qgrid)
     step2_c_constraints, step2_st_constraints, step2_shared_pf = create_step2_constraint(
-        peak_pos_guess, max_half_width, max_height, nf, step2_opt_method, self.qgrid, scale_factor_on_qgrid,
+        peak_pos_guess, max_half_width, max_height, nf, step2_opt_method, qgrid, scale_factor_on_qgrid,
         guinier_q_ranges, grad_threshes)
     mcrar = McrAR(c_regr=NNLS(), st_regr=NNLS(), tol_increase=mcr_tol_increase_2, max_iter=mcr_max_iter_2,
                   c_constraints=step2_c_constraints, st_constraints=step2_st_constraints)
@@ -176,9 +176,10 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
     step2_conc = mcrar.C_opt_.T.copy() / step2_shared_pf.prefactor
     step2_scaled_xs = mcrar.ST_opt_.copy()
     step2_rev_xs = step2_scaled_xs / scale_factor_on_qgrid
-    plot_mcr_concentration_scattering_profile(self.qgrid, step2_conc, step2_rev_xs, ax2_conc, ax2_xs, specie_names,
+    plot_mcr_concentration_scattering_profile(qgrid, step2_conc, step2_rev_xs, ax2_conc, ax2_xs, specie_names,
                                               step_name="Step 2")
 
+    """    
     dd2s = (step2_conc[1:].T @ step2_rev_xs[1:]).T  # leave water out
     self.d1s[sn]['subtracted'] = []
     for i in range(nf):
@@ -187,11 +188,12 @@ def subtract_buffer_mcr(self, peak_pos_guess: str, max_half_width: str, iframe_b
         self.d1s[sn]['subtracted'].append(d1c)
 
     self.save_d1s(sn, debug=debug)
-
+    """
     if debug is True:
         t2 = time.time()
         print("done, time lapsed: %.2f sec" % (t2 - t1))
 
+    return step2_conc,step2_rev_xs
 
 def bind_subtract_buffer_mcr(dt: h5sol_HPLC):
     dt.subtract_buffer_MCR = types.MethodType(subtract_buffer_mcr, dt)
