@@ -1,0 +1,7 @@
+*.pyc
+lixtools.egg-info/dependency_links.txt
+lixtools.egg-info/PKG-INFO
+lixtools.egg-info/requires.txt
+lixtools.egg-info/SOURCES.txt
+lixtools.egg-info/top_level.txt
+.DS_Store
