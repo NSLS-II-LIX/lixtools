@@ -81,12 +81,13 @@ class h5sol_ref(h5xs):
         for ts in sdict.keys():
             if set(sdict[ts].keys())<set(['top', 'bottom', 'empty']):
                 bad_ts_list.append(ts)
-                continue
-            if set(sdict[ts]['top'])<set(['blank', 'water']) or set(sdict[ts]['bottom'])<set(['blank', 'water']):
+            elif set(sdict[ts]['top'])<set(['blank', 'water']) or set(sdict[ts]['bottom'])<set(['blank', 'water']):
                 bad_ts_list.append(ts)
         for ts in bad_ts_list:
             del sdict[ts]
-                
+        if len(sdict)==0:
+            raise Exception("No valid data found.")
+
         if not timestamp in sdict.keys():
             print(f"cannot find the specified timestamp: {timestamp}, taking the average.")
             timestamp = list(sdict.keys())
