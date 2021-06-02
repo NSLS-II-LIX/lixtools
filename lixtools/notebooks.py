@@ -294,7 +294,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
     
     dt1 = h5xs(fn, transField=trans_field)
     dt1.load_d1s() 
-    dt1.set_trans()
+    dt1.set_trans(trans_mode.external)
     dt1.average_d1s(filter_data=True, debug="quiet")
     #dt2 = dt1
               
@@ -403,7 +403,7 @@ def display_HPLC_data(fn, atsas_path=""):
     """
     dt = h5sol_HPLC(fn)
     dt.load_d1s()
-    dt.set_trans(transMode=trans_mode.from_waxs)
+    dt.set_trans(trans_mode.from_waxs)
     dt.normalize_int()
 
     if "run_type" not in dt.fh5['/'].attrs.keys():
