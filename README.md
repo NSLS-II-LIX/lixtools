@@ -23,3 +23,6 @@ mailin: take existing labware dictionary for generate_docs()
 
 2020Mar:
 other atsas tools for model_data(); chi2 cutoff 
+
+2021Jun:
+h5sol_ref for absolute intensity scaling

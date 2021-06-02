@@ -31,6 +31,116 @@ def qgrid_labels(qgrid):
     return gpindex,gpvalues,gplabels
     
 
+class h5sol_ref(h5xs):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "abs_scaling" in self.fh5.attrs:
+            self.scaling = json.loads(self.fh5.attrs['abs_scaling'])
+            print("Scaling information retrieved from reference data.")
+        else:
+            self.scaling = {}
+        
+    def process(self, plot_data=True, timestamp=None, Iabs_w=1.632e-2):
+        """ calculate the scaling factor sf needed
+            to put Data1d.data on absolute scale: data*sf/trans_w
+            Iabs_w is the know absolute water scattering intensity at low q 
+            1.632 × 10−2 cm−1 at 293 K, doi:10.1107/S0021889899015216
+            temperature-dependent
+        """
+        sn = self.samples[0]
+        if "processed" not in lsh5(self.fh5[sn], top_only=True, silent=True):
+            self.load_data()
+        else:
+            self.load_d1s()
+        
+        self.set_trans(transMode=trans_mode.external, calc_water_peak=True, debug='quiet')
+        self.average_d1s(filter_data=True)
+        
+        sdict = {}
+        for sn in self.samples:
+            if "empty" in sn: # ss should be "empty"
+                ss,ts = sn.split('_', maxsplit=1)
+                if ss!="empty":
+                    raise Exception(f"don't know how to handle {sn}.")
+            else: # ss should be water or blank, cn should be top or bottom   
+                cn,ss,ts = sn.split('_', maxsplit=2)
+                if not ss in["water", "blank"] or cn not in ["top", "bottom"]:
+                    raise Exception(f"don't know how to handle {sn}.")
+
+            if not ts in sdict.keys():
+                sdict[ts] = {}
+            if ss=="empty":
+                sdict[ts]["empty"] = self.d1s[sn]["averaged"] 
+            else:
+                if cn not in sdict[ts].keys():
+                    sdict[ts][cn] = {}
+                sdict[ts][cn][ss] = self.d1s[sn]["averaged"]
+                
+        # only keep the data with complete set of information
+        bad_ts_list = []
+        for ts in sdict.keys():
+            if set(sdict[ts].keys())<set(['top', 'bottom', 'empty']):
+                bad_ts_list.append(ts)
+                continue
+            if set(sdict[ts]['top'])<set(['blank', 'water']) or set(sdict[ts]['bottom'])<set(['blank', 'water']):
+                bad_ts_list.append(ts)
+        for ts in bad_ts_list:
+            del sdict[ts]
+                
+        if not timestamp in sdict.keys():
+            print(f"cannot find the specified timestamp: {timestamp}, taking the average.")
+            timestamp = list(sdict.keys())
+            
+        if plot_data:
+            plt.figure()
+            ax = plt.gca()
+            
+        scaling_dict = {}
+        for cn in ["top", "bottom"]:
+            scaling_dict[cn] = {'trans': 0, 'trans_w': 0, 'Irel': 0}
+            n = 0
+            for ts in sdict.keys():
+                d1w = sdict[ts][cn]['water']
+                d1b = sdict[ts][cn]['blank']
+                d1w.bkg_cor(sdict[ts]["empty"], inplace=True)
+                d1b.bkg_cor(sdict[ts]["empty"], inplace=True)
+                d1t = d1w.bkg_cor(d1b)
+                if plot_data:
+                    ax.plot(d1t.qgrid, d1t.data, label=f"{cn},{ts}")
+                avg = np.average(d1t.data[(d1t.qgrid>0.1) & (d1t.qgrid<0.2)])
+                tratio = d1w.trans/d1b.trans 
+                print(f"{cn},{ts}: trans={d1w.trans:.1f}, trans_ratio={tratio:.3f}, trans_w={d1w.trans_w:.1f}, {avg:.3f}")
+                if ts in timestamp:
+                    scaling_dict[cn]['trans'] += d1w.trans
+                    scaling_dict[cn]['trans_w'] += d1w.trans_w
+                    scaling_dict[cn]['Irel'] += avg
+                    n += 1
+            for k in scaling_dict[cn].keys():
+                scaling_dict[cn][k] /= n
+            scaling_dict[cn]['sc_factor'] = Iabs_w/scaling_dict[cn]['Irel']
+        
+        if plot_data:
+            plt.legend()
+            plt.xlim(0.1, 0.3)
+            plt.ylim(0.1, 5)
+            plt.show()
+
+        self.fh5.attrs['abs_scaling'] = json.dumps(scaling_dict)
+        self.scaling = scaling_dict
+        
+    def scaling_factor(self, cn=None):
+        if self.scaling=={}:
+            raise Exception("Scaling info not found, run process() first.")
+        if cn in ['top', 'bottom']:
+            sc = self.scaling[cn]['sc_factor']
+            tw = self.scaling[cn]['trans_w']
+        else:
+            sc = (self.scaling['top']['sc_factor']+self.scaling['bottom']['sc_factor'])/2
+            tw = (self.scaling['top']['trans_w']+self.scaling['bottom']['trans_w'])/2
+            
+        return sc*tw
+    
+        
 class h5sol_HPLC(h5xs):
     """ single sample (not required, but may behave unexpectedly when there are multiple samples), 
         many frames; frames can be added gradually (not tested)
