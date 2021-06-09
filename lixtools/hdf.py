@@ -550,7 +550,7 @@ class h5sol_HPLC(h5xs):
         
     def bin_subtracted_frames(self, sn=None, frame_range=None, first_frame=0, last_frame=-1, weighted=True,
                               plot_data=True, fig=None, qmax=0.5, qs=0.01,
-                              save_data=False, path="", debug=False): 
+                              save_data=False, path="", debug=False, txtWidget=None): 
         """ this is typically used after running subtract_buffer_SVD()
             the frames are specified by either first_frame and last_frame, or frame_range, e.g. "50-60"
             if path is used, be sure that it ends with '/'
@@ -584,7 +584,8 @@ class h5sol_HPLC(h5xs):
                 ax1.errorbar(d1s0.qgrid, d1s0.data, d1s0.err)
                 ax1.set_xlim(0,qmax)
                 i0,rg,_ = d1s0.plot_Guinier(qs=qs, ax=ax2)
-            #print(f"I0={i0:.2g}, Rg={rg:.2f}")
+                if txtWidget is not None:
+                    txtWidget.value = f"I0={i0:.3g}, Rg={rg:.2f}"
 
         if plot_data:
             plt.tight_layout()   

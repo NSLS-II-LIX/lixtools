@@ -664,7 +664,7 @@ def display_HPLC_data(fn, atsas_path=""):
         #else:
         dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
                                  save_data=True, path="processed/",
-                                 fig=fig2, plot_data=True, debug='quiet')
+                                 fig=fig2, plot_data=True, debug='quiet', txtWidget=outTxt)
                         
     def report(w):
         updateDefaults()
