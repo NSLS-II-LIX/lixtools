@@ -711,10 +711,15 @@ class h5sol_HT(h5xs):
                 filter_data=True, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
+        if filter_data=="keep":
+            self.load_d1s()
         self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
-        self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
+        if filter_data=="keep":
+            self.average_samples(update_only=update_only, filter_data=False, selection=None, debug=debug)
+        else:
+            self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, debug=debug)
         
     def average_samples(self, **kwargs):
@@ -745,12 +750,12 @@ class h5sol_HT(h5xs):
             else:
                 self.d1b[sn] = self.d1s[bns[0]]['averaged'].avg([self.d1s[bn]['averaged'] for bn in bns[1:]], 
                                                                 debug=debug)
-            if sc_factor is "auto":
+            if sc_factor=="auto":
                 sf = estimate_scaling_factor(self.d1s[sn]['averaged'], self.d1b[sn])
                 # Data1d.bkg_cor() normalizes trans first before applying sc_factor
                 # in contrast the estimated 
                 sf /= self.d1s[sn]['averaged'].trans/self.d1b[sn].trans
-                if debug is not "quiet":
+                if debug!="quiet":
                     print(f"setting sc_factor for {sn} to {sf:.4f}")
                 self.attrs[sn]['sc_factor'] = sf
             elif sc_factor>0:
