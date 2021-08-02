@@ -40,7 +40,7 @@ class h5sol_ref(h5xs):
         else:
             self.scaling = {}
         
-    def process(self, plot_data=True, timestamp=None, Iabs_w=1.632e-2):
+    def process(self, plot_data=True, timestamp=None, Iabs_w=1.632e-2, **kwargs):
         """ calculate the scaling factor sf needed
             to put Data1d.data on absolute scale: data*sf/trans_w
             Iabs_w is the know absolute water scattering intensity at low q 
@@ -53,7 +53,7 @@ class h5sol_ref(h5xs):
         else:
             self.load_d1s()
         
-        self.set_trans(transMode=trans_mode.external, calc_water_peak=True, debug='quiet')
+        self.set_trans(transMode=trans_mode.external, calc_water_peak=True, trigger="sol", debug='quiet', **kwargs)
         self.average_d1s(filter_data=True)
         
         sdict = {}

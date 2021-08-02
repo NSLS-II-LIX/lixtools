@@ -26,3 +26,6 @@ other atsas tools for model_data(); chi2 cutoff
 
 2021Jun:
 h5sol_ref for absolute intensity scaling
+
+2021Aug:
+revised h5sol_ref to deal with monitor counts in a different stream in h5
