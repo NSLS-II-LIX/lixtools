@@ -78,7 +78,7 @@ def make_barcode(proposal_id, SAF_id, plate_id, path="", max_width=2.5, max_heig
     return str_in,img
     
 def validate_sample_list(xls_fn, 
-                         generate_barcode=True, sh_name=None,
+                         generate_barcode=True, sh_name=None, check_template=True,
                          proposal_id=None, SAF_id=None, plate_id=None,
                          b_lim = 3,    # number of samples allowed to share the same buffer for subtraction
                          v_margin = 5, # minimal extra volume required in stock wells
@@ -96,22 +96,38 @@ def validate_sample_list(xls_fn,
         sh_name = xl.sheet_names[0]
     msg.append(f"reading data from {sh_name} ...") 
     df = xl.parse(sh_name, dtype={'Volume (uL)': float})    
-        
+
+    # template spreadsheet is protected, "lix template"
+    if check_template:
+        sdict = df.to_dict()['Notes']
+        valid = True
+        if len(sdict)<99: 
+            valid = False
+        elif sdict[98]!='lix template':
+            valid = False
+        if not valid:
+            raise Exception("This spreadsheet does not appear to be generated using the LiX template.")
+    
     # get all samples
     df1 = df[~df["Sample"].isnull() & df["Stock"].isnull()][["Sample", "Buffer", "Well", "Volume (uL)"]]
-    # check redundant sample name
+
+    # check redundant sample name, and sample name validity
     all_samples = list(df1['Sample'])
     all_buffers = list(df1[~df1["Buffer"].isnull()]['Buffer'])
     all_sample_wells = list(df1['Well']) 
     for key, group in groupby(all_samples):
+        if not check_sample_name(key, check_for_duplicate=False):
+            raise Exception(f"invalid sample name: '{key}'")
         if len(list(group))>1:
             raise Exception(f"redundant sample name: {key}")
 
-    # check how many samples use the same buffer for subtraction
+    # check buffer name, and how many samples use the same buffer for subtraction
     for key, group in groupby(all_buffers):
+        if not key in all_samples:
+            raise Exception(f"'{key}' is not a sample and therefore not a valid buffer.")
         if len(list(group))>b_lim:
             raise Exception(f"{key} is used more than {b_lim} times for buffer subtraction.")
-
+            
     sdict = df1.set_index("Sample").T.to_dict()
     # check whether every sample has a buffer and in the same row
     for sn in list(set(all_samples)-set(all_buffers)):
