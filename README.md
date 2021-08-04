@@ -7,15 +7,15 @@ Change log:
 Initial release
 
 2020Nov: 
-1. add plate name to holder name during Opentron transfer
+1. add plate name to holder name during Opentron transfer;
 2. initial implementation of transfer using both pipetters
 
 2020Dec:
-moved some components from py4xs
+moved some components from py4xs;
 pdf report on static solution scattering data
 
 2021Jan:
-bug fixes for gen_pdf_report()
+bug fixes for gen_pdf_report();
 new module for producing structural models; support for DENSS
 
 2020Feb:
@@ -28,5 +28,6 @@ other atsas tools for model_data(); chi2 cutoff
 h5sol_ref for absolute intensity scaling
 
 2021Aug:
-revised h5sol_ref to deal with monitor counts in a different stream in h5
-more checks in spreadsheet validation
+revised h5sol_ref to deal with monitor counts in a different stream in h5;
+more checks in spreadsheet validation;
+moved webcam.py and ot2.py under lixtools/inst to avoid dependency check
