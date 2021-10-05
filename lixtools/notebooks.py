@@ -380,7 +380,7 @@ HPLC_GUI_par = {
 }              
               
               
-def display_HPLC_data(fn, atsas_path=""):
+def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value", transMode=trans_mode.from_waxs):
     """
     This function provides a GUI to access commonly used for interacting with h5sol_HPLC
     
@@ -401,9 +401,9 @@ def display_HPLC_data(fn, atsas_path=""):
         a h5sol_HPLC instance
 
     """
-    dt = h5sol_HPLC(fn)
+    dt = h5sol_HPLC(fn, transField=transField)
     dt.load_d1s()
-    dt.set_trans(trans_mode.from_waxs)
+    dt.set_trans(transMode, trigger="sol", dt0=0.05)  # in case external trans values are needed
     dt.normalize_int()
 
     if "run_type" not in dt.fh5['/'].attrs.keys():

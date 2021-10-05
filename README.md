@@ -31,3 +31,6 @@ h5sol_ref for absolute intensity scaling
 revised h5sol_ref to deal with monitor counts in a different stream in h5;
 more checks in spreadsheet validation;
 moved webcam.py and ot2.py under lixtools/inst to avoid dependency check
+
+2021Oct:
+option for trans_mode.external for HPLC data 
