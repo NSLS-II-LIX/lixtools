@@ -5,7 +5,7 @@ import pylab as plt
 import json,time,copy
 
 from scipy.linalg import svd
-from scipy.interpolate import splrep,sproot,splev
+from scipy.interpolate import splrep,sproot,splev,UnivariateSpline
 from scipy.ndimage.filters import gaussian_filter
 
 def qgrid_labels(qgrid):

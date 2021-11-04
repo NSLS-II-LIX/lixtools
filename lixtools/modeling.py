@@ -204,7 +204,9 @@ def merge_models(client, fns, cwd, prerequire, prog_name="dammif", debug=False, 
     cutoff = np.average(dd[dd<1])+np.std(dd[dd<1])*2
     selected = [i for i in range(ns) if dd[i]<cutoff]
     print("structures selected: ", selected)
-
+    if len(selected)==0:
+        raise Exception("No models are selected based on similarity.")
+    
     print("saving selected models ...")
     model_list = [fns[selected[0]]]
     fns_list = []
