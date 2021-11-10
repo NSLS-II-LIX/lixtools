@@ -3,6 +3,7 @@ from py4xs.hdf import lsh5,h5xs
 from scipy.interpolate import interp1d
 from scipy.integrate import simpson
 from py4xs.local import incident_monitor_field,transmitted_monitor_field
+import numpy as np
 
 def integrate_mon(em, ts, ts0, exp):
     """ integrate monitor counts
@@ -45,8 +46,8 @@ save_fields = {"py4xs.slnxs.Data1d": {"shared": ['qgrid', "transMode"],
               }
 
 class h5xs_scan(h5xs):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, proc_fn, raw_fn, *args, **kwargs):
+        super().__init__(*args, **kwargs, read_only=True)
         self.proc_data = {}
         
     def proc_data():
@@ -163,94 +164,7 @@ class h5xs_scan(h5xs):
                                   "snaking": snaking, 
                                   "fast_axis": {"motor": motors[1], "pos": fpos}, 
                                   "slow_axis": {"motor": motors[0], "pos": spos}}
-        
-        
-    def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
-                force_synch=-0.25, force_synch_trig=0, debug=False, plot_trigger=False, **kwargs): 
-        """ calculate the monitor counts for each data point
-            1. if the monitors are read together with the detectors 
-            2. if the monitors are used asynchronously, monitor values would need to be integated 
-               based on timestampls; a trigger must be provided 
-                2a: in fly scans, this should be a motor name
-                2b: for solution scattering, use "sol" as trigger
-
-            the timestamps on the trigger and em1/em2 may not be synced, dt0 provides a correction 
-            to the trigger timestamp
-            
-            if plot_trigger=True and a single sample is named as sn, generate a plot for verification
-
-            timestamps on em1 appear to be way off, ntpd not running
-            if force_synch is non-zero, use first em2 timestamp + force_synch as start of em1 
-        """
-        if sn is None or isinstance(sn, list):
-            if plot_trigger:
-                plot_trigger = False           # plot for a single sample only
-                print("Disabling plot_trigger since not a single sample name is specified.")
-            samples = self.samples
-        else:
-            samples = [sn]
-           
-        for s in samples:
-            if "pilatus" in self.header(s).keys():
-                md = self.header(s)['pilatus']
-                if 'exposure_time' in md.keys():
-                    exp=md['exposure_time']
-
-            if trigger is None:
-                #raise Exception("the motor that triggers data collection must be specified.")
-                print("monitors are used as detectors.")
-            elif trigger=="sol":
-                dn = list(self.det_name.values())[0]
-                # expect a finite but minimal offset in time since all come from the same IOC server
-                ts0 = self.fh5[f'{s}/primary/timestamps/{dn}'][...].flatten()
-                dshape = self.fh5[f"{s}/primary/data/{dn}"].shape[0]   # length of the time sequence
-                if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
-                    ts0 = ts0[0]+np.arange(dshape)*exp    
-            elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
-                ts0 = self.fh5[f'{s}/primary/timestamps/{trigger}'][...].flatten()
-                dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
-                if len(dshape)>1:
-                    if len(dshape)>2:
-                        raise Exception(f"Don't know how to handle data shape {dshape}")
-                    dshape = dshape[0]*dshape[1]
-                else:
-                    dshape = dshape[0]
-                if len(ts0) != dshape:
-                    raise Exception(f"mistached timestamp length: {len(ts0)} vs {dshape}")
-                if len(ts0)>1: # expect the monitor data to be 1D
-                    ts0 = ts0.flatten()
-            else:
-                raise Exception(f"timestamp data for {trigger} cannot be found.")
-
-            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor_field)
-            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor_field)
-            if force_synch!=0: # timestamps between em1/em2 
-                ts1 = ts1-ts1[0]+ts2[0]+force_synch
-
-            if strn=="primary":
-                trans_data0 = trans_data
-                incid_data0 = incid_data
-            else:
-                trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp)
-                incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp)                
-
-                if plot_trigger:
-                    plt.figure()
-                    plt.plot(ts2, trans_data/np.max(trans_data))
-                    plt.plot(ts0, trans_data0/np.max(trans_data), "o")
-                    plt.plot(ts1, incid_data/np.max(incid_data))
-                    plt.plot(ts0, incid_data0/np.max(incid_data), "o")
-
-            if not hasattr(self, "d0s"):
-                self.d0s = {}
-            if not sn in self.d0s.keys():
-                self.d0s[s] = {}
-            self.d0s[s]["transmitted"] = trans_data0
-            self.d0s[s]["incident"] = incid_data0
-            transmission = trans_data0/incid_data0
-            transmission /= np.nanmean(transmission)
-            self.d0s[s]["transmission"] = transmission
-            
+                            
     def load_qphi(self):
         pass
         
