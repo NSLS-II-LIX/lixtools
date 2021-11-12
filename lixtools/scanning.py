@@ -1,43 +1,6 @@
 from py4xs.data2d import MatrixWithCoords
 from py4xs.hdf import lsh5,h5xs
-from scipy.interpolate import interp1d
-from scipy.integrate import simpson
-from py4xs.local import incident_monitor_field,transmitted_monitor_field
 import numpy as np
-
-def integrate_mon(em, ts, ts0, exp):
-    """ integrate monitor counts
-        monitor counts are given by em with timestamps ts
-        ts0 is the timestamps on the exposures, with duration of exp
-        
-        assume ts and ts0 are 1d arrays
-    """
-    ffe = interp1d(ts, em)
-    em0 = []
-    for t in ts0:
-        tt = np.concatenate(([t], ts[(ts>t) & (ts<t+exp)], [t+exp]))
-        ee = ffe(tt)
-        em0.append(simpson(ee, tt))
-    return np.asarray(em0)/exp
-
-def get_monitor_counts(grp, fieldName):
-    """ look under a data group (grp) that belong to a specific sample, find the stream that contains fieldName
-        caluclate the monitor counts based on the given timestamps (ts) and exposure time
-    """
-    strn = None
-    for stream in list(grp):
-        if not 'data' in list(grp[stream]):
-            continue
-        if fieldName in list(grp[stream]["data"]):
-            strn = stream
-            break
-    if strn is None:
-        raise Exeption(f"could not find the stream that contains {fieldName}.")
-    
-    data = grp[strn]["data"][fieldName][...]
-    ts = grp[strn]["timestamps"][fieldName][...]
-
-    return strn,ts,data
 
 save_fields = {"py4xs.slnxs.Data1d": {"shared": ['qgrid', "transMode"],
                                       "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
