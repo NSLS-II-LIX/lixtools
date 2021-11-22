@@ -5,10 +5,9 @@ import numpy as np
 import multiprocessing as mp
 import json,os,pickle
 
-save_fields = {"py4xs.slnxs.Data1d": {"shared": ['qgrid', "transMode"],
-                                      "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
-               "py4xs.data2d.MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], 
-                                                 "unique": ["d", "err"]},
+save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
+               "MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], "unique": ["d", "err"]},
+               "ndarray": {"shared": [], "unique": []}
               }
 
 def proc_merge(args):
@@ -93,7 +92,7 @@ class h5xs_scan(h5xs):
         self.phigrid = np.linspace(-90, 90, self.Nphi)
         # if there are raw data file info, prepare the read only h5xs objects in case needed
         for sn in self.fh5.keys():
-            slef.attrs[sn] = {}
+            self.attrs[sn] = {}
             fn_raw = self.h5xs[sn].attrs['source']
             self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
             self.attrs[sn]['header'] = json.loads(self.h5xs[sn].attrs['header'])
@@ -211,13 +210,14 @@ class h5xs_scan(h5xs):
                             jobs.append(job)
                         else: # serial processing
                             [fr1, data] = proc_merge((images, nframes, i*c_size+j*s[1], debug, detectors, qgrid, phigrid)) 
-                            results[fr1] = data                
+                            results[fr1] = data
+                            print(len(data), len(data[0]))
 
             if N>1:             
                 for job in jobs:
                     [fr1, data] = job.get()[0]
                     results[fr1] = data
-                    print(f"data received: fr1={fr1}\r              ", end="")
+                    print(f"data received: fr1={fr1}              \r", end="")
                 pool.close()
                 pool.join()
     
@@ -230,14 +230,14 @@ class h5xs_scan(h5xs):
                 self.proc_data[sn]['azi_avg'] = {}
             self.proc_data[sn]['azi_avg']['merged'] = []
             for k in sorted(results.keys()):
-                for res in results[k]:
+                for resd,rese in zip(*results[k]):
                     dd2 = MatrixWithCoords()
                     dd2.xc = qgrid
                     dd2.xc_label = "q"
                     dd2.yc = phigrid
                     dd2.yc_label = "phi"
-                    dd2.d = res[0]
-                    dd2.err = res[1]
+                    dd2.d = resd
+                    dd2.err = rese
                     self.proc_data[sn]['qphi']['merged'].append(dd2)
                     dd1 = Data1d()
                     dd1d,dd1e = dd2.flatten(axis='x')
@@ -247,86 +247,124 @@ class h5xs_scan(h5xs):
                     self.proc_data[sn]['azi_avg']['merged'].append(dd1)
 
             if debug:
-                print(f"done processing {sn}.")
+                print(f"done processing {sn}.             ")
+    
+    def save_data(self):
+        print("saving processed data ...")
+        for sn in dt2.fh5.keys():
+            for data_key in dt2.proc_data[sn].keys():
+                for sub_key in dt2.proc_data[sn][data_key]:
+                    print(f"{sn}, {data_key}, {sub_key}        /r", ret="")
+                    pack(dt2, sn, data_key, sub_key)
+        print("done.                      ")
     
     def pack(self, sn, data_key, sub_key):
         """ this is for packing processed data, which should be stored under self.proc_data as a dictionary
-            the key is the name/identifier of the processed data, e.g. "qphi", "azi_avg"
+            sn="overall" is merged from all samples in the h5xs_scan object
+            the key is the name/identifier of the processed data
+                e.g. attrs, qphi, azi_avg, maps, tomo 
+            all the data stored under the data_key are of the same data type 
+            "attrs" are arrays, for values derived from the raw data file (e.g beam intensity), save as is
+            all other data should be either Data1d or MatrixWithCoords, with the same 
+                "shared" properties, saved as attributes of the datagroup
             the sub_key may not always be necessary, but is required for consistency 
-            all sub_keys should be lists/instances of Data1d or MatrixWithCoords, with the same "shared" properties
-                e.g. proc_data["maps"]["trans"], proc_data["azi_avg"]["subtracted"] 
+                e.g. "transmission", "merged", "subtracted", "bkg" 
 
             pack_data() saves the data into the h5 file under the group processed/{data_key}/{sub_key}
-
         """
-        n = len(self.proc_data[sn][data_key][sub_key])
-        if n==1:
-            d0 = self.proc_data[sn][data_key][sub_key]
+        data = self.proc_data[sn][data_key][sub_key]
+        if isinstance(data, list):
+            d0 = data[0]
+            n = len(data)
         else:
-            d0 = self.proc_data[sn][data_key][sub_key][0]
-        if not d0.__class__ in save_fields.keys():
-            raise Exception(f"{d0.__class__} is not supported for packing.")
+            d0 = data
+            n = 1
+
+        dtype = d0.__class__.__name__
+        if not dtype in save_fields.keys():
+            print(sn,data_key,sub_key)
+            raise Exception(f"{dtype} is not supported for packing.")
 
         fh5 = self.fh5
-        # the sample group should have been created when importing raw data
+        # the group fh5[sn] should already exist, created when importing raw data
         grp = fh5[sn]
-        
+
         # if the data group exists, the saved attributes needs to match those for the new data, 
         # otherwise raise exception, in case there is a conflict with existing data
         # the "shared" fields of the data, e.g. qgrid in azimuthal average, are then saved as attributes of the data group
         if data_key in list(grp.keys()):
-            grp = grp[data_keys]
-            for k in save_fields[d0.__class__]["shared"]:
-                if not np.equal(d0.__dict__[k], grp.attr[k]):
+            grp = grp[data_key]
+            if grp.attrs['type']!=dtype:
+                raise Exception(f"data type of {data_key} for {sn} does not match existing data")
+            for k in save_fields[dtype]["shared"]:
+                if not np.equal(d0.__dict__[k], grp.attrs[k]):
                     raise Exception(f"{k} in {data_key} for {sn} does not match existing data")
         else:
             grp = grp.create_group(data_key)
-            for k in save_fields[d0.__class__]["shared"]:
+            grp.attrs['type'] = dtype
+            for k in save_fields[dtype]["shared"]:
                 grp.attrs[k] = d0.__dict__[k]
 
-        # under the group, save the "unique" fields as datasets, after reorganizing if necessary (always a list?)
-        # the data group should be named as sub_key.unique_field
-        # chunk size??
+        # under the group, save the "unique" fields as datasets, named as sub_key.unique_field
+        # write numpy array as is
+        if dtype=="ndarray":
+            grp[sub_key] = self.proc_data[sn][data_key][sub_key]
+            return
 
+        if not sub_key in list(grp.keys()):
+            grp.create_group(sub_key)
+        grp = grp[sub_key]
+        grp.attrs['len'] = n
+        data = self.proc_data[sn][data_key][sub_key]
+        for k in save_fields[dtype]['unique']:
+            if not k in d0.__dict__.keys():
+                continue
+            if n==1:
+                grp[k] = d0.__dict__[k]
+            else:
+                grp[k] = np.array([d.__dict__[k] for d in data])
+    
+    def load_data(self):
+        for sn in self.fh5.keys():
+            if not sn in self.proc_data.keys():
+                print(f"loading data for {sn}")
+                self.proc_data[sn] = {}
+            for data_key in self.fh5[sn].keys():
+                dtype = self.fh5[sn][data_key].attrs['type']
+                print(f"{data_key}, {dtype}           \r", end="")
+                if not data_key in self.proc_data[sn].keys():
+                    self.proc_data[sn][data_key] = {}
+                if dtype=='Data1d':
+                    d0 = Data1d()
+                elif dtype=="MatrixWithCoords":
+                    d0 = MatrixWithCoords()
+                for field in save_fields[dtype]['shared']:
+                    d0.__dict__[field] = self.fh5[sn][data_key].attrs[field]
+                for sub_key in self.fh5[sn][data_key].keys():
+                    print(f"{sub_key}                 \r", end="")
+                    h5data = self.fh5[sn][data_key][sub_key]
+                    if dtype=="ndarray":
+                        self.proc_data[sn][data_key][sub_key] = h5data[...]
+                    else:
+                        fields = save_fields[dtype]['unique']
+                        n = h5data.attrs['len']
+                        if n==1:
+                            data = copy.copy(d0)
+                            for f in fields:
+                                if not f in h5data.keys():
+                                    continue
+                                data.__dict__[f] = h5data[f][...]
+                        else:
+                            data = [copy.copy(d0) for _ in range(n)]
+                            for f in fields:
+                                if not f in h5data.keys():
+                                    continue 
+                                for i in range(n):
+                                    data[i].__dict__[f] = h5data[f][i]
+                        self.proc_data[sn][data_key][sub_key] = data
+            print("done.              ")
 
-
-        if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
-            # new size for the data
-            del fh5[sn+'/processed']
-
-        grp = fh5[f"{sn}/processed"]
-        g0 = lsh5(grp, top_only=True, silent=True)[0]
-
-
-        data = self.proc_data[data_key]
-        if isinstance(data, np.ndarray):
-            # save directly, no other information necessary
-            pass
-
-        if not isinstance(data, list):
-            d0 = data
-            data = [d0]
-        else:
-            d0 = data[0]
-        if not data.__class__ in save_fields.keys():
-            raise Exception(f"don't know how to pack {data}") 
-
-        for k in save_fields:
-            grp = fh5[sn+'/processed']
-            g0 = lsh5(grp, top_only=True, silent=True)[0]
-            if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
-                # new size for the data
-                del fh5[sn+'/processed']
-                grp = fh5[sn].create_group("processed")        
-
-    def unpack(self, data_key):
-        pass
-
-
-                            
-    def load_qphi(self):
-        pass
-        
+                                    
     def make_map_from_attr(self, data, sn, key):
         """ for convenience in data processing, all processed data are saved as 1d lists'
             e.g. d0s[sn]["transmitted"], d1s[sn]["azi_avg"], d2s[sn]["qphi"]
