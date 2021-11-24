@@ -3,7 +3,7 @@ from py4xs.slnxs import Data1d
 from py4xs.hdf import lsh5,h5xs
 import numpy as np
 import multiprocessing as mp
-import json,os,pickle
+import json,os,copy
 
 save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
                "MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], "unique": ["d", "err"]},
@@ -15,8 +15,6 @@ def proc_merge(args):
         
     ret_d2 = []
     ret_e2 = []
-    ret_d1 = []
-    ret_e1 = []
     ndet = len(detectors)
     qms = [None for det in detectors]
     if debug is True:
@@ -31,20 +29,25 @@ def proc_merge(args):
             qm = qms[0].merge(qms[1:])
         else:
             qm = qms[0].d
-        #d1,e1 = qm.flatten(axis='x')
         ret_d2.append(qm.d)
         ret_e2.append(qm.err)
-        #ret_d1.append(d1)
-        #ret_e1.append(e1)
-            
+    
     if debug is True:
         print(f"processing completed: {starting_frame_no}.                \r", end="")
 
-    #return [starting_frame_no, ret_d2, ret_e2, ret_d1, ret_e1]
     return [starting_frame_no, [ret_d2, ret_e2]]
 
-
-def get_scan_parms(dh5xs, sn, prec=0.001):
+def regularize(ar, prec):
+    """ adjust array elements so that they are evenly spaced
+        and limit digits to the specified precision
+    """
+    step = np.mean(np.diff(ar))
+    step = prec*np.floor(np.fabs(step)/prec+0.5)*np.sign(step)
+    off = np.mean(ar-np.arange(len(ar))*step)
+    off = prec*10*np.floor(np.fabs(off)/prec/10+0.5)*np.sign(off)
+    return off+np.arange(len(ar))*step
+    
+def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     """ figure out the scan shape and motor positions, assuming 2D grid scans 
         i.e. sufficient to have a single set of x and y coordinates to specify the location
     """
@@ -64,12 +67,18 @@ def get_scan_parms(dh5xs, sn, prec=0.001):
         raise Exception(f"expecting two motors, got {motors}.")
     # slow axis is the first motor 
     spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
+    n = int(len(spos)/shape[1])
+    spos = spos[::n]         # in step scans, the slow axis position is reported every step
+    if force_uniform_steps:
+        spos = regularize(spos, prec)
+    
     # for the fast axis, the Newport fly scan sometime repeats position data  
     fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
     n = int(len(fpos)/shape[0]/shape[1])
     fpos = fpos[::n]         # remove redundancy, specific to fly scanning with Newport
     fpos = fpos[:shape[1]]   # assume these positions are repeating
-    fpos = prec*np.floor(fpos/prec)     # slight formatting
+    if force_uniform_steps:
+        fpos = regularize(fpos, prec)
 
     return {"shape": shape, "snaking": snaking, 
             "fast_axis": {"motor": motors[1], "pos": list(fpos)}, 
@@ -93,10 +102,11 @@ class h5xs_scan(h5xs):
         # if there are raw data file info, prepare the read only h5xs objects in case needed
         for sn in self.fh5.keys():
             self.attrs[sn] = {}
-            fn_raw = self.h5xs[sn].attrs['source']
+            fn_raw = self.fh5[sn].attrs['source']
             self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
-            self.attrs[sn]['header'] = json.loads(self.h5xs[sn].attrs['header'])
-            self.attrs[sn]['scan'] = json.loads(self.h5xs[sn].attrs['scan'])
+            self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
+            self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
+        self.list_samples(quiet=True)
             
     def list_data(self):
         for sn,d in self.proc_data.items(): 
@@ -105,8 +115,17 @@ class h5xs_scan(h5xs):
                 print("++", dk)  # should also print data type
                 for sk,sd in dd.items(): # sub key
                     print("++++", sk)  # should also print data size
+                    
+    def show_data(self, sn, **kwargs):
+        self.h5xs[sn].show_data(sn=sn, **kwargs)
         
-    def import_raw_data(self, fn_raw, sn=None):
+    def show_data_qphi(self, sn, **kwargs):
+        self.h5xs[sn].show_data_qphi(sn=sn, **kwargs)
+        
+    def show_data_qxy(self, sn, **kwargs):
+        self.h5xs[sn].show_data_qxy(sn=sn, **kwargs)
+        
+    def import_raw_data(self, fn_raw, sn=None, **kwargs):
         """ create new group, copy header, get scan parameters, calculate q-phi map
         """
         dt = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
@@ -126,11 +145,12 @@ class h5xs_scan(h5xs):
         grp.attrs['source'] = self.attrs[sn]['source'] 
         self.attrs[sn]['header'] = dt.header(sn)
         grp.attrs['header'] = json.dumps(self.attrs[sn]['header'])
-        self.attrs[sn]['scan'] = get_scan_parms(dt, sn)
+        self.attrs[sn]['scan'] = get_scan_parms(dt, sn, **kwargs)
         grp.attrs['scan'] = json.dumps(self.attrs[sn]['scan'])
         
         if not sn in self.proc_data.keys():
             self.proc_data[sn] = {}
+        self.list_samples(quiet=True)
         
         return sn
     
@@ -145,6 +165,20 @@ class h5xs_scan(h5xs):
         self.proc_data[sn]['attrs']["transmitted"] = self.h5xs[sn].d0s[sn]["transmitted"]
         self.proc_data[sn]['attrs']["incident"] = self.h5xs[sn].d0s[sn]["incident"]
         self.proc_data[sn]['attrs']["transmission"] = self.h5xs[sn].d0s[sn]["transmission"]
+    
+    def add_proc_data(self, sn, data_key, sub_key, data):
+        if sn not in self.proc_data.keys():
+            self.proc_data[sn] = {}
+        if data_key not in self.proc_data[sn].keys():
+            self.proc_data[sn][data_key] = {}
+        self.proc_data[sn][data_key][sub_key] = data
+    
+    def extract_attr(self, sn, attr_name, func, **kwarg):
+        """ extract an attribute from the pre-processed data using the specified function
+            the source of the data (data_key/sub_key) is defined in the func(**kwarg)
+        """
+        data = func(self.proc_data[sn], **kwargs)
+        self.add_proc_data(sn, 'attrs', attr_name, data)
             
     def process(self, N=8, max_c_size=1024, debug=True):
         """ get trans values
@@ -217,7 +251,7 @@ class h5xs_scan(h5xs):
                 for job in jobs:
                     [fr1, data] = job.get()[0]
                     results[fr1] = data
-                    print(f"data received: fr1={fr1}              \r", end="")
+                    print(f"data received: fr1={fr1}               \r", end="")
                 pool.close()
                 pool.join()
     
@@ -251,11 +285,11 @@ class h5xs_scan(h5xs):
     
     def save_data(self):
         print("saving processed data ...")
-        for sn in dt2.fh5.keys():
-            for data_key in dt2.proc_data[sn].keys():
-                for sub_key in dt2.proc_data[sn][data_key]:
-                    print(f"{sn}, {data_key}, {sub_key}        /r", ret="")
-                    pack(dt2, sn, data_key, sub_key)
+        for sn in self.fh5.keys():
+            for data_key in self.proc_data[sn].keys():
+                for sub_key in self.proc_data[sn][data_key]:
+                    print(f"{sn}, {data_key}, {sub_key}        \r", end="")
+                    self.pack(sn, data_key, sub_key)
         print("done.                      ")
     
     def pack(self, sn, data_key, sub_key):
@@ -331,7 +365,6 @@ class h5xs_scan(h5xs):
                 self.proc_data[sn] = {}
             for data_key in self.fh5[sn].keys():
                 dtype = self.fh5[sn][data_key].attrs['type']
-                print(f"{data_key}, {dtype}           \r", end="")
                 if not data_key in self.proc_data[sn].keys():
                     self.proc_data[sn][data_key] = {}
                 if dtype=='Data1d':
@@ -341,7 +374,7 @@ class h5xs_scan(h5xs):
                 for field in save_fields[dtype]['shared']:
                     d0.__dict__[field] = self.fh5[sn][data_key].attrs[field]
                 for sub_key in self.fh5[sn][data_key].keys():
-                    print(f"{sub_key}                 \r", end="")
+                    print(f"{data_key} ({dtype}): {sub_key}                \r", end="")
                     h5data = self.fh5[sn][data_key][sub_key]
                     if dtype=="ndarray":
                         self.proc_data[sn][data_key][sub_key] = h5data[...]
@@ -362,34 +395,51 @@ class h5xs_scan(h5xs):
                                 for i in range(n):
                                     data[i].__dict__[f] = h5data[f][i]
                         self.proc_data[sn][data_key][sub_key] = data
-            print("done.              ")
+            print("done.                                           ")
 
                                     
-    def make_map_from_attr(self, data, sn, key):
-        """ for convenience in data processing, all processed data are saved as 1d lists'
-            e.g. d0s[sn]["transmitted"], d1s[sn]["azi_avg"], d2s[sn]["qphi"]
+    def make_map_from_attr(self, sname, attr_name):
+        """ for convenience in data processing, all attributes extracted from the data are saved as
+            proc_data[sname]["attrs"][attr_name]
             
-            for visiualization and for further data processing (e.g. run tomopy), d0s need
-            to be re-organized to reflect the shape of the scan
-            the result is saved into d2s[sn]["maps"][key]
+            for visiualization and for further data processing (e.g. run tomopy), these attributes need
+            to be re-organized (de-snaking, merging) to reflect the shape of the scan/sample view
+            
+            sn="overall" is reserved for merging data from partial scans
         """
-        if not 'scan' in self.attrs[sn].keys():
-            get_scan_parms(self.h5xs[sn], sn)
-        data = data.reshape(self.attrs[sn]['scan']['shape'])
-        if not sn in self.proc_data.keys():
-            self.proc_data[sn] = {}
-        m = MatrixWithCoords()
-        m.d = data
-        m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
-        m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
-        m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
-        m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
+
+        if sname=="overall":
+            samples = self.samples
+        elif snname in self.samples:
+            samples = [sname]
+        else:
+            raise exception(f"sample {sn} does not exist") 
         
-        if self.attrs[sn]['scan']['snaking']:
-            print("de-snaking")
-            for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
-                m.d[i] = np.flip(m.d[i])
-        if "maps" not in self.proc_data[sn].keys():
-            self.proc_data[sn]['maps'] = {}
-        self.proc_data[sn]['maps'][key] = m
+        maps = []
+        for sn in samples:
+            if not 'scan' in self.attrs[sn].keys():
+                get_scan_parms(self.h5xs[sn], sn)
+            if attr_name not in self.proc_data[sn]['attrs'].keys():
+                raise exception(f"attribue {attr_name} cannot be found for {sn}.")
+            data = self.proc_data[sn]['attrs'][attr_name].reshape(self.attrs[sn]['scan']['shape'])
+            m = MatrixWithCoords()
+            m.d = data
+            m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
+            m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
+            m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
+            m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
+            maps.append(m)
+            if self.attrs[sn]['scan']['snaking']:
+                print("de-snaking")
+                for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
+                    m.d[i] = np.flip(m.d[i])
+            if "maps" not in self.proc_data[sn].keys():
+                self.proc_data[sn]['maps'] = {}
+            self.proc_data[sn]['maps'][attr_name] = m
     
+        if sname=="overall":
+            mm = maps[0].merge(maps[1:])
+            if "overall" not in self.proc_data.keys():
+                self.proc_data['overall'] = {}
+                self.proc_data['overall']['maps'] = {}
+            self.proc_data['overall']['maps'][attr_name] = mm
