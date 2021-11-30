@@ -10,13 +10,62 @@ save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err", "trans"
                "ndarray": {"shared": [], "unique": []}
               }
 
+
+def merge_d1s(d1s, avg_by_err=False):
+    s0 = Data1d()
+    s0.qgrid = d1s[0].qgrid
+    d_tot = np.zeros(s0.qgrid.shape)
+    d_max = np.zeros(s0.qgrid.shape)
+    d_min = np.zeros(s0.qgrid.shape)+1.e32
+    e_tot = np.zeros(s0.qgrid.shape)
+    c_tot = np.zeros(s0.qgrid.shape)
+    w_tot = np.zeros(s0.qgrid.shape)
+    
+    for d1 in d1s:        
+        # empty part of the data is nan
+        idx = ~np.isnan(d1.data)
+        c_tot[idx] += 1
+        if avg_by_err:
+            wt = 1/d1.err[idx]**2
+            d_tot[idx] += wt*d1.data[idx]
+            e_tot[idx] += d1.err[idx]**2*wt**2
+            w_tot[idx] += wt
+        else: # simple averaging
+            d_tot[idx] += d1.data[idx]
+            e_tot[idx] += d1.err[idx]
+        
+        idx1 = (np.ma.fix_invalid(d1.data, fill_value=-1)>d_max).data
+        d_max[idx1] = d1.data[idx1]
+        idx2 = (np.ma.fix_invalid(d1.data, fill_value=1e32)<d_min).data
+        d_min[idx2] = d1.data[idx2]
+                
+    if avg_by_err:
+        s0.data = d_tot/w_tot
+        s0.err = np.sqrt(e_tot)/w_tot
+    else: # simple averaging
+        idx = (c_tot>0)
+        s0.data = d_tot
+        s0.err = e_tot
+        s0.data[idx] /= c_tot[idx]
+        s0.err[idx] /= np.sqrt(c_tot[idx])
+        s0.data[~idx] = np.nan
+        s0.err[~idx] = np.nan
+
+    return s0
+        
 def proc_merge(args):
     dsets,nframes,starting_frame_no,debug,detectors,qgrid,phigrid = args
         
     ret_d2 = []
     ret_e2 = []
+    ret_d1 = []
+    ret_e1 = []
     ndet = len(detectors)
     qms = [None for det in detectors]
+    d1s = [Data1d() for det in detectors]
+    for d1 in d1s:
+        d1.qgrid = qgrid
+        
     if debug is True:
         print(f"processing started: starting frame = #{starting_frame_no}\r", end="")
     for i in range(nframes):
@@ -24,18 +73,25 @@ def proc_merge(args):
             img = dsets[j][i]
             d2 = Data2d(img, exp=det.exp_para)
             cf = det.fix_scale*d2.exp.FSA*d2.exp.FPol
+            if det.flat is not None:
+                cf *= det.flat
             qms[j] = d2.data.conv(qgrid, phigrid, d2.exp.Q, d2.exp.Phi, mask=d2.exp.mask, cor_factor=cf, interpolate='x')
+            d1s[j].data,d1s[j].err = d2.conv_Iq(qgrid, d2.exp.mask, cor_factor=cf) 
         if ndet>1:
             qm = qms[0].merge(qms[1:])
+            d1 = merge_d1s(d1s)
         else:
             qm = qms[0].d
+            d1 = d1s[0]
         ret_d2.append(qm.d)
         ret_e2.append(qm.err)
+        ret_d1.append(d1.data)
+        ret_e1.append(d1.err)
     
     if debug is True:
         print(f"processing completed: {starting_frame_no}.                \r", end="")
 
-    return [starting_frame_no, [ret_d2, ret_e2]]
+    return [starting_frame_no, [ret_d1, ret_e1, ret_d2, ret_e2]]
 
 def regularize(ar, prec):
     """ adjust array elements so that they are evenly spaced
@@ -68,7 +124,8 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     # slow axis is the first motor 
     spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
     n = int(len(spos)/shape[1])
-    spos = spos[::n]         # in step scans, the slow axis position is reported every step
+    if n>1:
+        spos = spos[::n]         # in step scans, the slow axis position is reported every step
     if force_uniform_steps:
         spos = regularize(spos, prec)
     
@@ -98,7 +155,7 @@ class h5xs_scan(h5xs):
         self.proc_data = {}
         self.h5xs = {}
         self.Nphi = Nphi
-        self.phigrid = np.linspace(-90, 90, self.Nphi)
+        self.phigrid = np.linspace(-180, 180, self.Nphi)
         # if there are raw data file info, prepare the read only h5xs objects in case needed
         for sn in self.fh5.keys():
             self.attrs[sn] = {}
@@ -173,12 +230,12 @@ class h5xs_scan(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
-    def extract_attr(self, sn, attr_name, func, **kwarg):
+    def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
-            the source of the data (data_key/sub_key) is defined in the func(**kwarg)
+            and source of the data (data_key/sub_key)
         """
-        data = func(self.proc_data[sn], **kwargs)
-        self.add_proc_data(sn, 'attrs', attr_name, data)
+        data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
+        self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
             
     def process(self, N=8, max_c_size=1024, debug=True):
         """ get trans values
@@ -264,20 +321,22 @@ class h5xs_scan(h5xs):
                 self.proc_data[sn]['azi_avg'] = {}
             self.proc_data[sn]['azi_avg']['merged'] = []
             for k in sorted(results.keys()):
-                for resd,rese in zip(*results[k]):
+                for res1d,res1e,res2d,res2e in zip(*results[k]):
                     dd2 = MatrixWithCoords()
                     dd2.xc = qgrid
                     dd2.xc_label = "q"
                     dd2.yc = phigrid
                     dd2.yc_label = "phi"
-                    dd2.d = resd
-                    dd2.err = rese
+                    dd2.d = res2d
+                    dd2.err = res2e
                     self.proc_data[sn]['qphi']['merged'].append(dd2)
                     dd1 = Data1d()
-                    dd1d,dd1e = dd2.flatten(axis='x')
-                    dd1.qgrid = dd2.xc
-                    dd1.data = dd1d
-                    dd1.err = dd1e
+                    #dd1d,dd1e = dd2.flatten(axis='x')
+                    dd1.qgrid = qgrid
+                    #dd1.data = dd1d
+                    #dd1.err = dd1e
+                    dd1.data = res1d
+                    dd1.err = res1e
                     self.proc_data[sn]['azi_avg']['merged'].append(dd1)
 
             if debug:
@@ -331,8 +390,12 @@ class h5xs_scan(h5xs):
             if grp.attrs['type']!=dtype:
                 raise Exception(f"data type of {data_key} for {sn} does not match existing data")
             for k in save_fields[dtype]["shared"]:
-                if not np.equal(d0.__dict__[k], grp.attrs[k]):
-                    raise Exception(f"{k} in {data_key} for {sn} does not match existing data")
+                if isinstance(d0.__dict__[k], str):  # labels
+                    if d0.__dict__[k]==grp.attrs[k]:
+                        continue
+                elif np.equal(d0.__dict__[k], grp.attrs[k]).all():
+                    continue
+                raise Exception(f"{k} in {data_key} for {sn} does not match existing data")
         else:
             grp = grp.create_group(data_key)
             grp.attrs['type'] = dtype
@@ -342,7 +405,11 @@ class h5xs_scan(h5xs):
         # under the group, save the "unique" fields as datasets, named as sub_key.unique_field
         # write numpy array as is
         if dtype=="ndarray":
-            grp[sub_key] = self.proc_data[sn][data_key][sub_key]
+            sd = self.proc_data[sn][data_key][sub_key]
+            if sub_key in grp.keys():
+                grp[sub_key][...] = sd
+            else:
+                grp.create_dataset(sub_key, data=sd)
             return
 
         if not sub_key in list(grp.keys()):
@@ -354,9 +421,13 @@ class h5xs_scan(h5xs):
             if not k in d0.__dict__.keys():
                 continue
             if n==1:
-                grp[k] = d0.__dict__[k]
+                sd = d0.__dict__[k]
             else:
-                grp[k] = np.array([d.__dict__[k] for d in data])
+                sd = np.array([d.__dict__[k] for d in data])
+            if k in grp.keys():
+                grp[k][...] = sd
+            else:
+                grp.create_dataset(k, data=sd)
     
     def load_data(self):
         for sn in self.fh5.keys():
@@ -410,7 +481,7 @@ class h5xs_scan(h5xs):
 
         if sname=="overall":
             samples = self.samples
-        elif snname in self.samples:
+        elif sname in self.samples:
             samples = [sname]
         else:
             raise exception(f"sample {sn} does not exist") 
