@@ -102,13 +102,14 @@ def regularize(ar, prec):
     off = np.mean(ar-np.arange(len(ar))*step)
     off = prec*10*np.floor(np.fabs(off)/prec/10+0.5)*np.sign(off)
     return off+np.arange(len(ar))*step
-    
+        
 def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     """ figure out the scan shape and motor positions, assuming 2D grid scans 
         i.e. sufficient to have a single set of x and y coordinates to specify the location
     """
     shape = dh5xs.header(sn)['shape']
     assert(len(shape)==2)
+    dec = -int(np.log10(prec))
 
     motors = dh5xs.header(sn)['motors']
     pn = dh5xs.header(sn)['plan_name']
@@ -128,6 +129,7 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
         spos = spos[::n]         # in step scans, the slow axis position is reported every step
     if force_uniform_steps:
         spos = regularize(spos, prec)
+    spos = spos.round(dec)
     
     # for the fast axis, the Newport fly scan sometime repeats position data  
     fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
@@ -136,7 +138,8 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     fpos = fpos[:shape[1]]   # assume these positions are repeating
     if force_uniform_steps:
         fpos = regularize(fpos, prec)
-
+    fpos = fpos.round(dec)
+        
     return {"shape": shape, "snaking": snaking, 
             "fast_axis": {"motor": motors[1], "pos": list(fpos)}, 
             "slow_axis": {"motor": motors[0], "pos": list(spos)}}  # json doesn't like numpy arrays
