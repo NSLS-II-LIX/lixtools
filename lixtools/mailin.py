@@ -19,8 +19,10 @@ def getUID():
         return "-".join(qstr.split("-")[:-1])
     return qstr
 
-def makeQRxls(fn, n=10):
+def makeQRxls(fn, n=10, use_UID_text=True):
     qdict = {"UIDs" : [getUID() for _ in  range(n)] }
+    if use_UID_text:
+        qdict['label'] = [uid[0:4] for uid in qdict['UIDs']]
     df = pd.DataFrame.from_dict(qdict)
     df.to_excel(fn, index=False)
 

@@ -11,6 +11,9 @@ save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err", "trans"
               }
 
 
+def mp_proc(data):
+    pass
+
 def merge_d1s(d1s, avg_by_err=False):
     s0 = Data1d()
     s0.qgrid = d1s[0].qgrid
@@ -58,13 +61,8 @@ def proc_merge(args):
         
     ret_d2 = []
     ret_e2 = []
-    ret_d1 = []
-    ret_e1 = []
     ndet = len(detectors)
     qms = [None for det in detectors]
-    d1s = [Data1d() for det in detectors]
-    for d1 in d1s:
-        d1.qgrid = qgrid
         
     if debug is True:
         print(f"processing started: starting frame = #{starting_frame_no}\r", end="")
@@ -76,22 +74,18 @@ def proc_merge(args):
             if det.flat is not None:
                 cf *= det.flat
             qms[j] = d2.data.conv(qgrid, phigrid, d2.exp.Q, d2.exp.Phi, mask=d2.exp.mask, cor_factor=cf, interpolate='x')
-            d1s[j].data,d1s[j].err = d2.conv_Iq(qgrid, d2.exp.mask, cor_factor=cf) 
         if ndet>1:
             qm = qms[0].merge(qms[1:])
-            d1 = merge_d1s(d1s)
         else:
             qm = qms[0].d
-            d1 = d1s[0]
         ret_d2.append(qm.d)
         ret_e2.append(qm.err)
-        ret_d1.append(d1.data)
-        ret_e1.append(d1.err)
+
     
     if debug is True:
         print(f"processing completed: {starting_frame_no}.                \r", end="")
 
-    return [starting_frame_no, [ret_d1, ret_e1, ret_d2, ret_e2]]
+    return [starting_frame_no, [ret_d2, ret_e2]]
 
 def regularize(ar, prec):
     """ adjust array elements so that they are evenly spaced
@@ -124,7 +118,7 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
         raise Exception(f"expecting two motors, got {motors}.")
     # slow axis is the first motor 
     spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
-    n = int(len(spos)/shape[1])
+    n = int(len(spos)/shape[0])
     if n>1:
         spos = spos[::n]         # in step scans, the slow axis position is reported every step
     if force_uniform_steps:
@@ -160,13 +154,16 @@ class h5xs_scan(h5xs):
         self.Nphi = Nphi
         self.phigrid = np.linspace(-180, 180, self.Nphi)
         # if there are raw data file info, prepare the read only h5xs objects in case needed
-        for sn in self.fh5.keys():
+        self.samples = list(self.fh5.keys())
+        if 'overall' in self.samples:
+            self.samples.remove('overall')
+            self.attrs['overall'] = {}
+        for sn in self.samples:
             self.attrs[sn] = {}
             fn_raw = self.fh5[sn].attrs['source']
             self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
             self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
-        self.list_samples(quiet=True)
             
     def list_data(self):
         for sn,d in self.proc_data.items(): 
@@ -233,6 +230,14 @@ class h5xs_scan(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
+    def get_d1s_from_d2s(self, sn, N=8):
+        """ calculate azi_avg from qphi
+        """ 
+        if "qphi" not in self.proc_data[sn].keys():
+            raise Exception(f"qphi data do not exist for {sn}.")
+            
+        
+    
     def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
             and source of the data (data_key/sub_key)
@@ -240,7 +245,7 @@ class h5xs_scan(h5xs):
         data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
         self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
             
-    def process(self, N=8, max_c_size=1024, debug=True):
+    def process(self, N=8, max_c_size=1024, debug=True, proc_1d=True):
         """ get trans values
             produce azimuthal average and/or q-phi maps
         """
@@ -320,11 +325,12 @@ class h5xs_scan(h5xs):
             if not "qphi" in self.proc_data[sn].keys():
                 self.proc_data[sn]['qphi'] = {}
             self.proc_data[sn]['qphi']['merged'] = []
-            if not "azi_avg" in self.proc_data[sn].keys():
-                self.proc_data[sn]['azi_avg'] = {}
-            self.proc_data[sn]['azi_avg']['merged'] = []
+            #if not "azi_avg" in self.proc_data[sn].keys():
+            #    self.proc_data[sn]['azi_avg'] = {}
+            #self.proc_data[sn]['azi_avg']['merged'] = []
             for k in sorted(results.keys()):
-                for res1d,res1e,res2d,res2e in zip(*results[k]):
+                for res2d,res2e in zip(*results[k]):
+                #for res1d,res1e,res2d,res2e in zip(*results[k]):
                     dd2 = MatrixWithCoords()
                     dd2.xc = qgrid
                     dd2.xc_label = "q"
@@ -333,21 +339,13 @@ class h5xs_scan(h5xs):
                     dd2.d = res2d
                     dd2.err = res2e
                     self.proc_data[sn]['qphi']['merged'].append(dd2)
-                    dd1 = Data1d()
-                    #dd1d,dd1e = dd2.flatten(axis='x')
-                    dd1.qgrid = qgrid
-                    #dd1.data = dd1d
-                    #dd1.err = dd1e
-                    dd1.data = res1d
-                    dd1.err = res1e
-                    self.proc_data[sn]['azi_avg']['merged'].append(dd1)
 
             if debug:
                 print(f"done processing {sn}.             ")
     
     def save_data(self):
         print("saving processed data ...")
-        for sn in self.fh5.keys():
+        for sn in list(self.fh5.keys())+["overall"]:
             for data_key in self.proc_data[sn].keys():
                 for sub_key in self.proc_data[sn][data_key]:
                     print(f"{sn}, {data_key}, {sub_key}        \r", end="")
@@ -383,7 +381,11 @@ class h5xs_scan(h5xs):
 
         fh5 = self.fh5
         # the group fh5[sn] should already exist, created when importing raw data
-        grp = fh5[sn]
+        # except for "overall"
+        if not sn in self.fh5.keys():
+            grp = self.fh5.create_group(sn)
+        else:
+            grp = fh5[sn]
 
         # if the data group exists, the saved attributes needs to match those for the new data, 
         # otherwise raise exception, in case there is a conflict with existing data
@@ -471,6 +473,40 @@ class h5xs_scan(h5xs):
                         self.proc_data[sn][data_key][sub_key] = data
             print("done.                                           ")
 
+            
+    def qphi_bkgsub(self, bsn, bfrns):
+        """ background subtraction, using the specified sample name and frame numbers 
+            also correct/normalize for transmitted intensity, using the bkg trans as the reference value
+            this value is saved as ['attrs']['ref_trans']
+        """
+        if bsn not in self.samples:
+            raise Exception(f"sample {bsn} does not exist.")
+        if isinstance(bfrns, int):
+            bfrns = [bfrns]
+        n = 0
+        dbkg = self.proc_data[bsn]['qphi']['merged'][bfrns[0]]
+        if len(bfrns)>1:
+            dbkg.d = np.nanmean([self.proc_data[bsn]['qphi']['merged'][i].d for i in bfrns], axis=0)
+            dbkg.err = np.nanmean([self.proc_data[bsn]['qphi']['merged'][i].err for i in bfrns], axis=0)
+            dbkg.err /= np.sqrt(len(bfrns))
+
+        # there could be intensity in the sample data but not in the bkg
+        dbkg.d[np.isnan(dbkg.d)] = 0
+        dbkg.err[np.isnan(dbkg.err)] = 0
+        mon_t = np.average(self.proc_data[bsn]['attrs']['transmitted'][bfrns])
+        mon_i = np.average(self.proc_data[bsn]['attrs']['incident'][bfrns])
+
+        for sn in self.samples:
+            self.proc_data[sn]['attrs']['ref_trans'] = np.array([mon_t])
+            self.proc_data[sn]['qphi']['bkg'] = dbkg
+            self.proc_data[sn]['qphi']['subtracted'] = []
+            for trans,mm in zip(self.proc_data[sn]['attrs']['transmitted'], self.proc_data[sn]['qphi']['merged']):
+                m1 = mm.copy()
+                sc = mon_t/trans
+                m1.d = mm.d*sc - dbkg.d
+                m1.err = mm.err*sc   # needs work here
+                self.proc_data[sn]['qphi']['subtracted'].append(m1)
+        
                                     
     def make_map_from_attr(self, sname, attr_name):
         """ for convenience in data processing, all attributes extracted from the data are saved as
@@ -494,23 +530,24 @@ class h5xs_scan(h5xs):
             if not 'scan' in self.attrs[sn].keys():
                 get_scan_parms(self.h5xs[sn], sn)
             if attr_name not in self.proc_data[sn]['attrs'].keys():
-                raise exception(f"attribue {attr_name} cannot be found for {sn}.")
+                raise Exception(f"attribue {attr_name} cannot be found for {sn}.")
             data = self.proc_data[sn]['attrs'][attr_name].reshape(self.attrs[sn]['scan']['shape'])
             m = MatrixWithCoords()
-            m.d = data
+            m.d = np.copy(data)
             m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
             m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
             m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
             m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
-            maps.append(m)
             if self.attrs[sn]['scan']['snaking']:
                 print("de-snaking")
                 for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
                     m.d[i] = np.flip(m.d[i])
             if "maps" not in self.proc_data[sn].keys():
                 self.proc_data[sn]['maps'] = {}
+            maps.append(m)
             self.proc_data[sn]['maps'][attr_name] = m
     
+        # assume the scans are of the same type, therefore start from the same direction
         if sname=="overall":
             mm = maps[0].merge(maps[1:])
             if "overall" not in self.proc_data.keys():
