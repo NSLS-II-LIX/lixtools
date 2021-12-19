@@ -343,11 +343,25 @@ class h5xs_scan(h5xs):
             if debug:
                 print(f"done processing {sn}.             ")
     
-    def save_data(self):
+    def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None):
         print("saving processed data ...")
-        for sn in list(self.fh5.keys())+["overall"]:
-            for data_key in self.proc_data[sn].keys():
-                for sub_key in self.proc_data[sn][data_key]:
+        if save_sns is None:
+            save_sns = list(self.fh5.keys())+["overall"]
+        elif not isinstance(save_sns, list):
+            save_sns = [save_sns]
+        for sn in save_sns:
+            dks = self.proc_data[sn].keys()
+            if save_data_keys is not None:
+                if not isinstance(save_data_keys, list):
+                    save_data_keys = [save_data_keys]
+                dks = list(set(save_data_keys) & set(dks))
+            for data_key in dks:
+                sks = self.proc_data[sn][data_key].keys()
+                if save_sub_keys is not None:
+                    if not isinstance(save_sub_keys, list):
+                        save_sub_keys = [save_sub_keys]
+                    sks = list(set(save_sub_keys) & set(sks))
+                for sub_key in sks:
                     print(f"{sn}, {data_key}, {sub_key}        \r", end="")
                     self.pack(sn, data_key, sub_key)
         print("done.                      ")
@@ -411,11 +425,12 @@ class h5xs_scan(h5xs):
         # write numpy array as is
         if dtype=="ndarray":
             sd = self.proc_data[sn][data_key][sub_key]
-            if sub_key in grp.keys():
-                grp[sub_key][...] = sd
-            else:
-                grp.create_dataset(sub_key, data=sd)
-            return
+            if sd is not None:  # e.g. err for some MatrixWithCoords
+                if sub_key in grp.keys():
+                    grp[sub_key][...] = sd
+                else:
+                    grp.create_dataset(sub_key, data=sd)
+                return
 
         if not sub_key in list(grp.keys()):
             grp.create_group(sub_key)
@@ -424,6 +439,8 @@ class h5xs_scan(h5xs):
         data = self.proc_data[sn][data_key][sub_key]
         for k in save_fields[dtype]['unique']:
             if not k in d0.__dict__.keys():
+                continue
+            if d0.__dict__[k] is None:  # e.g. err in MatrixWithCoords
                 continue
             if n==1:
                 sd = d0.__dict__[k]
