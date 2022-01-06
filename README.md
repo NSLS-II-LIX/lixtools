@@ -35,3 +35,7 @@ moved webcam.py and ot2.py under lixtools/inst to avoid dependency check
 2021Oct:
 option for trans_mode.external for HPLC data;
 first version of h5xs_scan
+
+2022Jan:
+update after implementing functions for h5xs_scan
+
