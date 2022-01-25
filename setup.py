@@ -12,7 +12,7 @@ setup(
     packages=find_packages(),
     package_data={'': ['plate_label_template.html', 'template_report.ipynb']},
     include_package_data=True,
-    install_requires=['py4xs', 'numpy', 'pandas', 
+    install_requires=['py4xs', 'numpy', 'pandas', 'scipy>=1.6',
                       'python-barcode', 'matplotlib', 'pillow', 
                       'openpyxl>=3', 'qrcode'],
     python_requires='>=3.6',
