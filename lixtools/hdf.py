@@ -677,19 +677,26 @@ class h5sol_HT(h5xs):
 
     def change_buffer(self, sample_name, buffer_name):
         """ buffer_name could be just a string (name) or a list of names 
+            if sample_name is a list, all samples in the list will be assigned the same buffer
         """
-        if sample_name not in self.samples:
-            raise Exception(f"invalid sample name: {sample_name}")
+        
+        if not isinstance(sample_name, list):
+            sample_name = [sample_name]
+            
         if isinstance(buffer_name, str):
             buffer_name = [buffer_name]
         for b in buffer_name:
             if b not in self.samples:
                 raise Exception(f"invalid buffer name: {b}")
+
+        for sn in sample_name:
+            if sn not in self.samples:
+                raise Exception(f"invalid sample name: {sn}")
+            self.buffer_list[sn] = buffer_name 
+            self.fh5[sn].attrs['buffer'] = '  '.join(buffer_name)
+            self.subtract_buffer(sn)
         
-        self.buffer_list[sample_name] = buffer_name 
-        self.fh5[sample_name].attrs['buffer'] = '  '.join(buffer_name)
         self.fh5.flush()               
-        self.subtract_buffer(sample_name)
         
     def update_h5(self, debug=False):
         """ raw data are updated using add_sample()
