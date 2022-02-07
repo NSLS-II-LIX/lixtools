@@ -335,7 +335,7 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
                   plate_type = "corning_96_wellplate_360ul_flat",
                   holder_type = "lix_3x_holder_c",
                   tip_type = "opentrons_96_tiprack_300ul",
-                  flow_rate_aspirate = 50, flow_rate_dispense = 50, 
+                  flow_rate_aspirate = 20, flow_rate_dispense = 50, 
                   bottom_clearance = 1
                  ):
     """ ot2_layout should be a dictionary:
