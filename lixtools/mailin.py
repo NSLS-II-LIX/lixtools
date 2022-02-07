@@ -236,6 +236,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
     # get ot2 layout info
     
     # create tranfer list
+    mixing_list = []
     transfer_list = []
     slist = []
     for bcode in pdict.keys():
@@ -263,7 +264,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
             if wn in mdict.keys():
                 # mix first
                 for ws,v in mdict[wn].items():
-                    transfer_list.append([pname, ws, pname, wn, v])
+                    mixing_list.append([pname, ws, pname, wn, v])
                     vt += v
 
             # now transfer
@@ -272,7 +273,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
             # add entry into the sample dictionary
             slist.append([hname, hpos, wdict[wn]["Sample"], wdict[wn]["Buffer"], vt])
 
-    return slist,transfer_list,bdict
+    return slist,transfer_list,bdict,mixing_list
 
 def read_OT2_layout(plate_slots, holder_slots, msg=None):
     """ 
@@ -343,7 +344,7 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
              "tips" : "9,10"}
     """
     print("Processing sample list(s) ...")
-    slist,transfer_list,bdict = process_sample_lists(xls_fns, b_lim=b_lim)
+    slist,transfer_list,bdict,mixing_list = process_sample_lists(xls_fns, b_lim=b_lim)
     
     if ldict is None:
         print("Reading bar/QR codes, this might take a while ...")
@@ -368,7 +369,7 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
     protocol = ["metadata = {'protocolName': 'sample transfer',\n",
                 "            'author': 'LiX',\n",
                 "            'description': 'auto-generated',\n",
-                "            'apiLevel': '2.3'\n",
+                "            'apiLevel': '2.11'\n",
                 "           }\n", 
                 "\n",
                 "def run(ctx):\n",]
@@ -386,7 +387,10 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
     protocol.append(f"    pipet.flow_rate.aspirate = {flow_rate_aspirate}\n")
     protocol.append(f"    pipet.flow_rate.dispense = {flow_rate_dispense}\n")
 
-    for st in transfer_list:
+    for st in mixing_list+["pause"]+transfer_list:
+        if st=="pause":
+            protocol.append(f"    ctx.pause('Mixing completed. Resume to start transfer.')\n")
+            continue
         src,sw,dest,dw,vol = st
         if dest in holders.keys():
             dest = holders[dest]
