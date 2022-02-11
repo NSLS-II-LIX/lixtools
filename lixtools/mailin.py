@@ -232,9 +232,7 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
             elif bdict['proposal_id']!=bdict0['proposal_id'] or bdict['proposal_id']!=bdict0['proposal_id']:
                 raise Exception("Cannot process plates from differernt proposal/SAF together.")
             pdict[sh_name] = [wdict, mdict]
-    
-    # get ot2 layout info
-    
+        
     # create tranfer list
     mixing_list = []
     transfer_list = []
@@ -261,12 +259,16 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
             else:
                 vt = wdict[wn]["Volume (uL)"]
             # require mixing
+            blow_out = False
             if wn in mdict.keys():
                 # mix first
                 for ws,v in mdict[wn].items():
-                    mixing_list.append([pname, ws, pname, wn, v])
+                    mixing_list.append([pname, ws, pname, wn, [v, blow_out]])
+                    if not blow_out:
+                        blow_out = True
                     vt += v
-
+                mixing_list[-1][-1][-1] = vt
+                    
             # now transfer
             transfer_list.append([pname, wn, hname, hpos, vt])
             
@@ -332,11 +334,12 @@ def generate_measurement_spreadsheet(fn, slist, holders, bdict):
 def generate_docs(ot2_layout, xls_fns, ldict=None,   
                   run_name="test",
                   b_lim=4,
-                  plate_type = "corning_96_wellplate_360ul_flat",
+                  plate_type = "biorad_96_wellplate_200ul_pcr",
                   holder_type = "lix_3x_holder_c",
                   tip_type = "opentrons_96_tiprack_300ul",
                   flow_rate_aspirate = 20, flow_rate_dispense = 50, 
-                  bottom_clearance = 1
+                  n_mix=3, pause_after_mixing=True,
+                  bottom_clearance = 0.5
                  ):
     """ ot2_layout should be a dictionary:
             {"plates" : "1,2",
@@ -369,7 +372,7 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
     protocol = ["metadata = {'protocolName': 'sample transfer',\n",
                 "            'author': 'LiX',\n",
                 "            'description': 'auto-generated',\n",
-                "            'apiLevel': '2.11'\n",
+                "            'apiLevel': '2.9'\n",
                 "           }\n", 
                 "\n",
                 "def run(ctx):\n",]
@@ -387,7 +390,13 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
     protocol.append(f"    pipet.flow_rate.aspirate = {flow_rate_aspirate}\n")
     protocol.append(f"    pipet.flow_rate.dispense = {flow_rate_dispense}\n")
 
-    for st in mixing_list+["pause"]+transfer_list:
+    if pause_after_mixing:
+        ops_list = mixing_list+["pause"]+transfer_list
+    else:
+        ops_list = mixing_list+transfer_list
+    
+    bl_str = "blow_out=True, blowout_location='destination well'"
+    for st in ops_list:
         if st=="pause":
             protocol.append(f"    ctx.pause('Mixing completed. Resume to start transfer.')\n")
             continue
@@ -407,7 +416,18 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
         else:
             raise Exception(f"Unknown labware encountered: {dest}")
 
-        protocol.append(f"    pipet.transfer({vol}, {sname}, {dname})\n")
+        if isinstance(vol, list):
+            # part of mixing
+            vol,action = vol  
+            #protocol.append(f"    pipet.transfer({vol}, {sname}, {dname})\n")
+            #if action==True:
+            #    protocol.append(f"    pipet.blow_out()\n")
+            if action>1: # mixing 
+                protocol.append(f"    pipet.transfer({vol}, {sname}, {dname}, mix_after=({n_mix}, {action}), {bl_str})\n")
+            else:
+                protocol.append(f"    pipet.transfer({vol}, {sname}, {dname}, {bl_str})\n")
+        else:
+            protocol.append(f"    pipet.transfer({vol}, {sname}, {dname}, {bl_str})\n")
 
     fd = open(fn, "w+")
     fd.writelines(protocol)
