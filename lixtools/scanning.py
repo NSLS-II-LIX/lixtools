@@ -346,7 +346,9 @@ class h5xs_scan(h5xs):
     def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None):
         print("saving processed data ...")
         if save_sns is None:
-            save_sns = list(self.fh5.keys())+["overall"]
+            save_sns = list(self.fh5.keys())
+            if "overall" in self.proc_data.keys():
+                save_sns += ["overall"]
         elif not isinstance(save_sns, list):
             save_sns = [save_sns]
         for sn in save_sns:
