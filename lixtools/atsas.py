@@ -5,6 +5,8 @@ from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
 
+atsas_path = "/nsls2/xf16id1/sw/ATSAS-3.0.3-1/bin"
+
 def run(cmd, path="", ignoreErrors=True, returnError=False, debug=False):
     """ cmd should be a list, e.g. ["ls", "-lh"]
         path is for the cmd, not the same as cwd
@@ -40,7 +42,7 @@ def atsas_create_temp_file(fn, d1s, skip=0, q_cutoff=0.6):
     idx = (d1s.qgrid<=q_cutoff)
     np.savetxt(fn, np.vstack([d1s.qgrid[idx][skip:], d1s.data[idx][skip:], d1s.err[idx][skip:]]).T)
     
-def atsas_autorg(fn, debug=False, path=""):
+def atsas_autorg(fn, debug=False, path=atsas_path):
     ret = run(["autorg", fn], path).split('\n')
     #rg,drg = extract_vals(ret[0], "+/-", debug=debug)
     #i0,di0 = extract_vals(ret[1], "+/-", debug=debug)
@@ -63,7 +65,7 @@ def atsas_autorg(fn, debug=False, path=""):
             "fit range": [n1,n2],
             "quality": qual}
 
-def atsas_datgnom(fn, rg, first, last=None, fn_out=None, path=""):
+def atsas_datgnom(fn, rg, first, last=None, fn_out=None, path=atsas_path):
     """ 
     """
     if fn_out is None:
@@ -248,7 +250,7 @@ Mandatory arguments to long options are mandatory for short options too.
 
 """
 
-def atsas_dat_tools(fn_out, path=""):
+def atsas_dat_tools(fn_out, path=atsas_path):
     # datporod: the used Rg, I0, the computed volume estimate and the input file name
     #
     # datvc: the first three numbers are the integrated intensities up to 0.2, 0.25 and 0.3, respectively. 
@@ -284,7 +286,7 @@ def atsas_dat_tools(fn_out, path=""):
 
 
 def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, 
-                     plot_full_q_range=False, print_results=True, path=""):
+                     plot_full_q_range=False, print_results=True, path=atsas_path):
     if not os.path.isdir("processed"):
         os.mkdir("processed")
     
