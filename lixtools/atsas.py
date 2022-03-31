@@ -5,7 +5,7 @@ from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
 
-atsas_path = "/nsls2/xf16id1/sw/ATSAS-3.0.3-1/bin"
+atsas_path = ""
 
 def run(cmd, path="", ignoreErrors=True, returnError=False, debug=False):
     """ cmd should be a list, e.g. ["ls", "-lh"]
@@ -420,7 +420,7 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
         txt += f"MW estimate: {ret['datmow']['MW']/1000:.1f} kDa (MoW)"          
         return txt
     
-def gen_report(fn):
+def gen_report(fn, atsas_path=''):
     """ create a pdf file to summarize the static solution scattering data in the specified h5 file
     """
     dn = os.path.dirname(fn)
@@ -447,6 +447,7 @@ def gen_report(fn):
     with open(fn1, 'r+') as fh:
         txt = fh.read()
         txt = re.sub('00template00.h5', fn, txt)
+        txt = re.sub('00atsas_path00', atsas_path, txt)            
         fh.seek(0)
         fh.write(txt)
         fh.truncate()

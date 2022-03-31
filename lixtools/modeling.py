@@ -211,14 +211,19 @@ def merge_models(client, fns, cwd, prerequire, prog_name="dammif", debug=False, 
     model_list = [fns[selected[0]]]
     fns_list = []
     for i in selected[1:]:
-        fn0 = os.path.join(cwd, f"aligned_{selected[0]:02d}-{i:02d}{fext}")
-        fn1 = os.path.join(cwd, f"{fns[i][:-4]}r{fext}")
-        if os.path.isfile(fn0):
+        #fn0 = os.path.join(cwd, f"aligned_{selected[0]:02d}-{i:02d}{fext}")
+        #fn1 = os.path.join(cwd, f"{fns[i][:-4]}r{fext}")
+        fn0 = f"aligned_{selected[0]:02d}-{i:02d}{fext}"
+        fn1 = f"{fns[i][:-4]}r{fext}"
+        if os.path.isfile(os.path.join(cwd, fn0)):
             fns_list.append([fn0, fn1]) 
             model_list.append(fn0)
         else:
             print(f"Warning: {fn0} does not exist!")
-    
+    if debug:
+        print("selected models: ", model_list)
+        print("cwd = {cwd}")
+            
     print("averaging selected models ...")
     if prog_name=="denss":
         client.gather(run_task(client, cmd=["denss.average.py", "-f", *model_list, "-o", "denss"], cwd=cwd))
@@ -228,9 +233,9 @@ def merge_models(client, fns, cwd, prerequire, prog_name="dammif", debug=False, 
         client.gather(run_task(client, cmd=[os.path.join(server_atsas_path, "damstart"), "damaver.pdb"], cwd=cwd))
 
     print("cleaning up ...")        
-    client.gather([client.submit(os.rename, *fns) for fns in fns_list])
-    #futures = [run_task(client, cmd=['cp', *fns], cwd=cwd) for fns in fns_list]
-    #client.gather(futures)
+    #client.gather([client.submit(os.rename, *fns) for fns in fns_list], cwd=cwd)
+    futures = [run_task(client, cmd=['cp', *fns], cwd=cwd) for fns in fns_list]
+    client.gather(futures)
     #fn_list = client.submit(glob.glob, 
     #                        os.path.join(cwd, f"aligned_*-*{fext}")).result()
     #client.gather(client.submit(lambda x: [os.remove(x0) for x0 in x], fn_list))
@@ -239,7 +244,7 @@ def merge_models(client, fns, cwd, prerequire, prog_name="dammif", debug=False, 
 
 
 def model_data(client, fn, rep=20, subdir=None, prog_name="dammif", 
-               args=["--mode=SLOW"], chi2_cutoff=-1): 
+               args=["--mode=SLOW"], debug=False, chi2_cutoff=-1): 
     """ repeat a bunch of dammif/dammin/gasbor/denss runs
         Examples:
             prog_name="dammif", ["--mode=SLOW", "--anisometry=O", "--symmetry=P6"]
@@ -278,11 +283,11 @@ def model_data(client, fn, rep=20, subdir=None, prog_name="dammif",
     
     if prog_name=="denss":
         slist = merge_models(client, [f"{sn}-{i:02d}.mrc" for i in range(rep)], cwd, futures,
-                             prog_name, chi2_cutoff=chi2_cutoff)
+                             prog_name, debug=debug, chi2_cutoff=chi2_cutoff)
         fns = ["denss_avg.mrc"]
     else:
         slist = merge_models(client, [f"{sn}-{i:02d}-1.pdb" for i in range(rep)], cwd, futures,
-                             prog_name, chi2_cutoff=chi2_cutoff)    
+                             prog_name, debug=debug, chi2_cutoff=chi2_cutoff)    
         fns = ["damaver.pdb", "damfilt.pdb", "damstart.pdb"]
     
     # rename files to clarify data origin
