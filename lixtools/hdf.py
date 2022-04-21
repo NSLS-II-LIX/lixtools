@@ -277,10 +277,13 @@ class h5sol_HPLC(h5xs):
                     ax2.plot(self.qgrid, np.sqrt(s[i])*Vh[i]) #s[i]*U[:,i])
                 ax2.set_xlabel("q")                
 
+        self.enable_write(True)
         self.attrs[sn]['sc_factor'] = sc_factor
         self.attrs[sn]['svd excluded frames'] = excluded_frames_list
         self.attrs[sn]['svd parameter Nc'] = Nc
         self.attrs[sn]['svd parameter poly_order'] = poly_order
+        self.enable_write(False)
+        
         if 'subtracted' in self.d1s[sn].keys():
             del self.d1s[sn]['subtracted']
         self.d1s[sn]['subtracted'] = []
@@ -324,8 +327,10 @@ class h5sol_HPLC(h5xs):
             
         if sample_frame_range==None:
             # perform subtraction on all data and save listbfn, d1b
+            self.enable_write(True)
             self.attrs[sn]['buffer frames'] = listbfn
             self.attrs[sn]['sc_factor'] = sc_factor
+            self.enable_write(False)
             self.d1s[sn]['buf average'] = d1b
             if 'subtracted' in self.d1s[sn].keys():
                 del self.d1s[sn]['subtracted']
@@ -666,14 +671,14 @@ class h5sol_HT(h5xs):
                 self.buffer_list[sn] = [buf_list[sn]]
             else:
                 self.buffer_list[sn] = buf_list[sn]
-            #self.attrs[sn]['buffer'] = self.buffer_list[sn] 
         
         if debug is True:
             print('updating buffer assignments')
+        self.enable_write(True)
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
                 self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
-        self.fh5.flush()               
+        self.enable_write(False)
 
     def change_buffer(self, sample_name, buffer_name):
         """ buffer_name could be just a string (name) or a list of names 
@@ -693,25 +698,24 @@ class h5sol_HT(h5xs):
             if sn not in self.samples:
                 raise Exception(f"invalid sample name: {sn}")
             self.buffer_list[sn] = buffer_name 
+            self.enable_write(True)
             self.fh5[sn].attrs['buffer'] = '  '.join(buffer_name)
+            self.enable_write(False)
             self.subtract_buffer(sn)
-        
-        self.fh5.flush()               
-        
+                
     def update_h5(self, debug=False):
         """ raw data are updated using add_sample()
             save sample-buffer assignment
             save processed data
         """
-        #fh5 = h5py.File(self.fn, "r+")
         if debug is True:
             print("updating 1d data and buffer info ...") 
-        fh5 = self.fh5
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
-                fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
+                self.enable_write(True)
+                self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
+                self.enable_write(False)
             self.save_d1s(sn, debug=debug)
-        #fh5.flush()                           
         
     def process(self, detectors=None, update_only=False,
                 reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
@@ -747,6 +751,8 @@ class h5sol_HT(h5xs):
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
+        
+        self.enable_write(True)
         for sn in samples:
             if update_only and 'subtracted' in list(self.d1s[sn].keys()): continue
             if sn not in list(self.buffer_list.keys()): continue
@@ -772,8 +778,9 @@ class h5sol_HT(h5xs):
                 sf = self.attrs[sn]['sc_factor']
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
                                                                           sc_factor=sf, debug=debug)
+            self.enable_write(False)
 
-        self.update_h5()  #self.fh5.flush()
+        self.update_h5() 
         if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
