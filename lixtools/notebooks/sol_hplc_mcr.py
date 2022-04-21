@@ -6,7 +6,7 @@ import pylab as plt
 
 from .subtract_buffer_mcr import subtract_buffer_mcr
 from .sol_hplc import HPLC_GUI_par
-
+    
 def prep_data(dt, show_data=False):
     dd2s = np.vstack([d1.data for d1 in dt.d1s[dt.samples[0]]['subtracted']]).T
     qgrid = dt.qgrid

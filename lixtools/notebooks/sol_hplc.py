@@ -29,7 +29,13 @@ HPLC_GUI_par = {
     'sc_factor': 0.995,
     'SVD_fw': '1, 1.5',
     'frns_export': '100-110',
-    'export_all': False
+    'export_all': False,
+    'peak_guess': '125, 140',
+    'half_width': '15, 13',
+    'guinier_q': '[0.08, 0.11], [0.15, 0.15]',
+    'grad_thresh': '100.0, 10.0',
+    'opt_method_step1': 'dogbox',
+    'opt_method_step2': 'trf',
 }              
               
               
