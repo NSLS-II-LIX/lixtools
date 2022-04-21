@@ -97,10 +97,10 @@ def atsas_datgnom(fn, rg, first, last=None, fn_out=None, path=atsas_path):
             #    Real space range:                    0.0000 to      45.9000
             #    Real space Rg:                   0.1470E+02 +-   0.1148E+00
             #    Real space I(0):                 0.5733E+01 +-   0.2619E-01
-            qual = extract_vals(run(["grep", "Total Estimate", fn_out], path))[0]
-            dmax = extract_vals(run(["grep", "Real space range", fn_out], path))[1]
-            rgg = extract_vals(run(["grep", "Reciprocal space Rg", fn_out], path))[0]
-            rgp = extract_vals(run(["grep", "Real space Rg", fn_out], path))[0]
+            qual = extract_vals(run(["grep", "Total Estimate", fn_out]))[0]
+            dmax = extract_vals(run(["grep", "Real space range", fn_out]))[1]
+            rgg = extract_vals(run(["grep", "Reciprocal space Rg", fn_out]))[0]
+            rgp = extract_vals(run(["grep", "Real space Rg", fn_out]))[0]
     except:
         qual = 0
         dmax = 100
@@ -124,10 +124,11 @@ def read_arr_from_strings(lines, cols=[0,1,2]):
         tb = np.genfromtxt(StringIO(buf))
         if np.isnan(tb).any():   # mixed text and numbersS          J EXP       ERROR       J REG       I REG
             continue
-        ret.append([tb[i] for i in cols])
+        if len(tb)>=np.max(cols):
+            ret.append([tb[i] for i in cols])
     return np.asarray(ret).T
 
-def read_gnom_out_file(fn, plot_pr=False, ax=None):
+def read_gnom_out_file(fn, plot_data=False, fig=None, figsize=(9,4)):
     ff = open(fn, "r")
     tt = ff.read()
     ff.close()
@@ -137,15 +138,22 @@ def read_gnom_out_file(fn, plot_pr=False, ax=None):
     iq, pr = t1.split("####      Real Space Data                               ####")
     #iq, pr = t1.split("Distance distribution  function of particle")
     dq, di = read_arr_from_strings(iq.rstrip().split("\n"), cols=[0,-1])
+    rdq,rdi,rde,_ = read_arr_from_strings(iq.rstrip().split("\n"), cols=[0,1,2,3])
     dr, dpr, dpre = read_arr_from_strings(pr.rstrip().split("\n"), cols=[0,1,2])
     
-    if plot_pr:
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-        ax.errorbar(dr, dpr, dpre)
+    if plot_data:
+        if fig is None:
+            fig = plt.figure(figsize=figsize)
+        ax1 = fig.add_subplot(121)
+        ax1.semilogy(dq, di)
+        ax1.errorbar(rdq, rdi, rde)
+        ax2 = fig.add_subplot(122)
+        ax2.errorbar(dr, dpr, dpre)
     
-    return hdr.rstrip(),dq,di,dr,dpr,dpre
+    return {"header": hdr.rstrip(),
+            "raw_data": [rdq,rdi,rde],
+            "gnom_fit": [dq,di],
+            "P(r)": [dr,dpr,dpre]}
 
 # ALMERGE   Automatically merges data collected from two different concentrations or 
 #           extrapolates it to infinite dilution assuming moderate particle interactions.
@@ -331,7 +339,10 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
     re_gnom = atsas_datgnom(tfn, re_autorg["Rg"], first=sk0+1,
                             last=len(d1s.qgrid[d1s.qgrid<=qc0]), fn_out=tfn_out, path=path)
     try:
-        hdr,dq,di,dr,dpr,dpre = read_gnom_out_file(tfn_out)
+        ret = read_gnom_out_file(tfn_out)
+        hdr = ret["header"]
+        dq,di = ret["gnom_fit"]
+        dr,dpr,dpre = ret["P(r)"]
         if plot_full_q_range:
             idx = (dq>=d1s.qgrid[0])
             ax[0].loglog(dq[idx], di[idx], zorder=2)
