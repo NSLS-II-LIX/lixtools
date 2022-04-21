@@ -5,8 +5,28 @@ from lixtools.hdf import h5sol_HT,h5sol_HPLC
 import pylab as plt
 
 from .subtract_buffer_mcr import subtract_buffer_mcr
+from .sol_hplc import HPLC_GUI_par
 
-def performMCR(dd2s, qgrid):
+def prep_data(dt, show_data=False):
+    dd2s = np.vstack([d1.data for d1 in dt.d1s[dt.samples[0]]['subtracted']]).T
+    qgrid = dt.qgrid
+
+    dd2s.shape, len(qgrid)
+
+    d1 = np.min(dd2s, axis=1)
+    m1 = (d1>0)
+    m1 = m1 & (np.append(m1[1:],True)) & (np.insert(m1[:-1],0,True))
+
+    if show_data:
+        plt.figure(figsize=(7,3))
+        plt.subplot(121)
+        plt.imshow(np.log(dd2s))
+        plt.subplot(122)
+        plt.imshow(np.log(np.compress(m1, dd2s, axis=0)))
+
+    return np.compress(m1, dd2s, axis=0), qgrid[m1]
+
+def performMCR(dt: h5sol_HPLC):
 
     peakGuessTx = ipywidgets.Text(value=HPLC_GUI_par['peak_guess'],
                                   description='peak guess frames:',
@@ -53,6 +73,8 @@ def performMCR(dd2s, qgrid):
     fig2 = plt.figure(figsize=(9,6))
     HPLC_GUI_par["mcr_ret"] = None
     
+    dd2s,qgrid = prep_data(dt)
+    
     def plot2d(w):
         if HPLC_GUI_par["mcr_ret"] is None:
             txtbox.value = "run MCR first."
@@ -92,9 +114,9 @@ def performMCR(dd2s, qgrid):
             txtbox.value = "completed ...  "
             HPLC_GUI_par["mcr_ret"] = [cprof, bv]
         
-
     display(ipywidgets.VBox([hbox32c, hbox32d,  
                              ipywidgets.HBox([btnRun, btn2dplot]), txtbox], 
                             layout=ipywidgets.Layout(width='90%')))
+    
     btnRun.on_click(run)
     btn2dplot.on_click(plot2d)
