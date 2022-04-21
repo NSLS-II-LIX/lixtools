@@ -277,12 +277,15 @@ class h5sol_HPLC(h5xs):
                     ax2.plot(self.qgrid, np.sqrt(s[i])*Vh[i]) #s[i]*U[:,i])
                 ax2.set_xlabel("q")                
 
-        self.enable_write(True)
-        self.attrs[sn]['sc_factor'] = sc_factor
-        self.attrs[sn]['svd excluded frames'] = excluded_frames_list
-        self.attrs[sn]['svd parameter Nc'] = Nc
-        self.attrs[sn]['svd parameter poly_order'] = poly_order
-        self.enable_write(False)
+        if self.read_only:
+            print("h5 file is read-only ...")
+        else:
+            self.enable_write(True)
+            self.attrs[sn]['sc_factor'] = sc_factor
+            self.attrs[sn]['svd excluded frames'] = excluded_frames_list
+            self.attrs[sn]['svd parameter Nc'] = Nc
+            self.attrs[sn]['svd parameter poly_order'] = poly_order
+            self.enable_write(False)
         
         if 'subtracted' in self.d1s[sn].keys():
             del self.d1s[sn]['subtracted']
@@ -327,10 +330,13 @@ class h5sol_HPLC(h5xs):
             
         if sample_frame_range==None:
             # perform subtraction on all data and save listbfn, d1b
-            self.enable_write(True)
-            self.attrs[sn]['buffer frames'] = listbfn
-            self.attrs[sn]['sc_factor'] = sc_factor
-            self.enable_write(False)
+            if self.read_only:
+                print("h5 file is read-only ...")
+            else:
+                self.enable_write(True)
+                self.attrs[sn]['buffer frames'] = listbfn
+                self.attrs[sn]['sc_factor'] = sc_factor
+                self.enable_write(False)
             self.d1s[sn]['buf average'] = d1b
             if 'subtracted' in self.d1s[sn].keys():
                 del self.d1s[sn]['subtracted']
@@ -674,6 +680,9 @@ class h5sol_HT(h5xs):
         
         if debug is True:
             print('updating buffer assignments')
+        if self.read_only:
+            print("h5 file is read-only ...")
+            return
         self.enable_write(True)
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
@@ -694,6 +703,9 @@ class h5sol_HT(h5xs):
             if b not in self.samples:
                 raise Exception(f"invalid buffer name: {b}")
 
+        if self.read_only:
+            print("h5 file is read-only ...")
+            return
         for sn in sample_name:
             if sn not in self.samples:
                 raise Exception(f"invalid sample name: {sn}")
@@ -710,6 +722,9 @@ class h5sol_HT(h5xs):
         """
         if debug is True:
             print("updating 1d data and buffer info ...") 
+        if self.read_only:
+            print("h5 file is read-only ...")
+            return
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
                 self.enable_write(True)
@@ -747,11 +762,14 @@ class h5sol_HT(h5xs):
             samples = list(self.buffer_list.keys())
         elif isinstance(samples, str):
             samples = [samples]
-
+        
+        if self.read_only:
+            print("h5 file is read-only ...")
+            return
+        
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
-        
         self.enable_write(True)
         for sn in samples:
             if update_only and 'subtracted' in list(self.d1s[sn].keys()): continue

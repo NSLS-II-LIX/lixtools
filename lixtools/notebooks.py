@@ -10,10 +10,10 @@ from lixtools.atsas import gen_atsas_report
 import pylab as plt
 from scipy import interpolate,integrate
 
-def display_solHT_data(fn, atsas_path=""):
+def display_solHT_data(fn, atsas_path="", read_only=False):
     """ atsas_path for windows might be c:\atsas\bin
     """
-    dt = h5sol_HT(fn)
+    dt = h5sol_HT(fn, read_only=read_only)
     dt.load_d1s()
     dt.subtract_buffer(sc_factor=-1, debug='quiet')
     if not os.path.exists("processed/"):
@@ -380,7 +380,8 @@ HPLC_GUI_par = {
 }              
               
               
-def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value", transMode=trans_mode.from_waxs):
+def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
+                      read_only=False, transMode=trans_mode.from_waxs):
     """
     This function provides a GUI to access commonly used for interacting with h5sol_HPLC
     
@@ -401,7 +402,7 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value", tr
         a h5sol_HPLC instance
 
     """
-    dt = h5sol_HPLC(fn, transField=transField)
+    dt = h5sol_HPLC(fn, transField=transField, read_only=read_only)
     dt.load_d1s()
     dt.set_trans(transMode, trigger="sol", dt0=0.05)  # in case external trans values are needed
     dt.normalize_int()
