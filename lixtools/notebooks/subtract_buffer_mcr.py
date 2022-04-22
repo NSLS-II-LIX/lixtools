@@ -63,7 +63,7 @@ def create_step1_constraint(peak_pos_guess, max_half_width, max_height, tot_step
     shared_pf = SharedGlobalPrefactor()
 
     c_constraints = list()
-    #c_constraints.append(ConstraintGlobalPrefactor(stage=1, shared_prefactor=shared_pf))
+    c_constraints.append(ConstraintGlobalPrefactor(stage=1, shared_prefactor=shared_pf))
     for i, (pos, hw) in enumerate(zip(peak_pos_guess, max_half_width)):
         ci = (np.r_[0:tot_steps],
               np.full(tot_steps, dtype='int', fill_value=i + 1))
