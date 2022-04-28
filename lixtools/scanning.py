@@ -144,7 +144,7 @@ class h5xs_scan(h5xs):
         copy the meta data, convert raw data into q-phi maps
         can still show data, 
     """
-    def __init__(self, *args, Nphi=32, **kwargs):
+    def __init__(self, *args, Nphi=32, load_raw_data=True, **kwargs):
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
             open(fn, 'w').close()
@@ -161,7 +161,10 @@ class h5xs_scan(h5xs):
         for sn in self.samples:
             self.attrs[sn] = {}
             fn_raw = self.fh5[sn].attrs['source']
-            self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+            if load_raw_data:
+                self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+            else: 
+                self.h5xs[sn] = fn_raw
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
             self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
             
