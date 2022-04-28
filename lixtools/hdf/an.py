@@ -87,64 +87,13 @@ def proc_merge(args):
 
     return [starting_frame_no, [ret_d2, ret_e2]]
 
-def regularize(ar, prec):
-    """ adjust array elements so that they are evenly spaced
-        and limit digits to the specified precision
-    """
-    step = np.mean(np.diff(ar))
-    step = prec*np.floor(np.fabs(step)/prec+0.5)*np.sign(step)
-    off = np.mean(ar-np.arange(len(ar))*step)
-    off = prec*10*np.floor(np.fabs(off)/prec/10+0.5)*np.sign(off)
-    return off+np.arange(len(ar))*step
-        
-def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
-    """ figure out the scan shape and motor positions, assuming 2D grid scans 
-        i.e. sufficient to have a single set of x and y coordinates to specify the location
-    """
-    shape = dh5xs.header(sn)['shape']
-    assert(len(shape)==2)
-    dec = -int(np.log10(prec))
-
-    motors = dh5xs.header(sn)['motors']
-    pn = dh5xs.header(sn)['plan_name']
-    if pn=="raster":
-        snaking = True
-    elif "snaking" in dh5xs.header(sn).keys():
-        snaking = dh5xs.header(sn)["snaking"][-1]
-    else: 
-        snaking = False
-
-    if len(motors)!=2:
-        raise Exception(f"expecting two motors, got {motors}.")
-    # slow axis is the first motor 
-    spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
-    n = int(len(spos)/shape[0])
-    if n>1:
-        spos = spos[::n]         # in step scans, the slow axis position is reported every step
-    if force_uniform_steps:
-        spos = regularize(spos, prec)
-    spos = spos.round(dec)
-    
-    # for the fast axis, the Newport fly scan sometime repeats position data  
-    fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
-    n = int(len(fpos)/shape[0]/shape[1])
-    fpos = fpos[::n]         # remove redundancy, specific to fly scanning with Newport
-    fpos = fpos[:shape[1]]   # assume these positions are repeating
-    if force_uniform_steps:
-        fpos = regularize(fpos, prec)
-    fpos = fpos.round(dec)
-        
-    return {"shape": shape, "snaking": snaking, 
-            "fast_axis": {"motor": motors[1], "pos": list(fpos)}, 
-            "slow_axis": {"motor": motors[0], "pos": list(spos)}}  # json doesn't like numpy arrays
-
-class h5xs_scan(h5xs):
+class h5xs_an(h5xs):
     """ keep the detector information
         import data from raw h5 files, keep track of the file location
-        copy the meta data, convert raw data into q-phi maps
+        copy the meta data, convert raw data into q-phi maps or azimuthal profiles
         can still show data, 
     """
-    def __init__(self, *args, Nphi=32, load_raw_data=True, **kwargs):
+    def __init__(self, *args, Nphi=32, **kwargs):
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
             open(fn, 'w').close()
@@ -161,10 +110,7 @@ class h5xs_scan(h5xs):
         for sn in self.samples:
             self.attrs[sn] = {}
             fn_raw = self.fh5[sn].attrs['source']
-            if load_raw_data:
-                self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
-            else: 
-                self.h5xs[sn] = fn_raw
+            self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
             self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
             
@@ -239,18 +185,10 @@ class h5xs_scan(h5xs):
         if "qphi" not in self.proc_data[sn].keys():
             raise Exception(f"qphi data do not exist for {sn}.")
             
-        
-    
-    def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, **kwargs):
-        """ extract an attribute from the pre-processed data using the specified function
-            and source of the data (data_key/sub_key)
-        """
-        data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
-        self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
-            
+                    
     def process(self, N=8, max_c_size=1024, debug=True, proc_1d=True):
         """ get trans values
-            produce azimuthal average and/or q-phi maps
+            produce azimuthal average (if proc_1d==True) and/or q-phi maps
         """
         qgrid = self.qgrid 
         phigrid = self.phigrid
