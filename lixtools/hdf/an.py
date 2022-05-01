@@ -1,6 +1,6 @@
 from py4xs.data2d import Data2d,MatrixWithCoords
 from py4xs.slnxs import Data1d
-from py4xs.hdf import lsh5,h5xs
+from py4xs.hdf import lsh5,h5xs,proc_merge1d
 import numpy as np
 import multiprocessing as mp
 import json,os,copy
@@ -56,7 +56,7 @@ def merge_d1s(d1s, avg_by_err=False):
 
     return s0
         
-def proc_merge(args):
+def proc_merge2d(args):
     dsets,nframes,starting_frame_no,debug,detectors,qgrid,phigrid = args
         
     ret_d2 = []
@@ -80,7 +80,6 @@ def proc_merge(args):
             qm = qms[0].d
         ret_d2.append(qm.d)
         ret_e2.append(qm.err)
-
     
     if debug is True:
         print(f"processing completed: {starting_frame_no}.                \r", end="")
@@ -91,17 +90,27 @@ class h5xs_an(h5xs):
     """ keep the detector information
         import data from raw h5 files, keep track of the file location
         copy the meta data, convert raw data into q-phi maps or azimuthal profiles
-        can still show data, 
+        can still show data, through the h5xs object for the raw data
     """
-    def __init__(self, *args, Nphi=32, **kwargs):
+    def __init__(self, *args, Nphi=32, load_raw_data=True, pre_proc="2D", **kwargs):
+        """ pre_proc: should be either 1D or 2D, determines whether to save q-phi maps or 
+                    azimuhtal averages as the pre-processed data
+        """
+        if pre_proc not in ['1D', '2D']:
+            raise Exception(f"can't handle pre_proc = {pre_proc}, must be either 1D or 2D")
+        self.pre_proc = pre_proc
+        
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
             open(fn, 'w').close()
         super().__init__(*args, have_raw_data=False, **kwargs)
         self.proc_data = {}
         self.h5xs = {}
-        self.Nphi = Nphi
-        self.phigrid = np.linspace(-180, 180, self.Nphi)
+        
+        if pre_proc=="2D":
+            self.Nphi = Nphi
+            self.phigrid = np.linspace(-180, 180, self.Nphi)
+        
         # if there are raw data file info, prepare the read only h5xs objects in case needed
         self.samples = list(self.fh5.keys())
         if 'overall' in self.samples:
@@ -110,7 +119,10 @@ class h5xs_an(h5xs):
         for sn in self.samples:
             self.attrs[sn] = {}
             fn_raw = self.fh5[sn].attrs['source']
-            self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+            if load_raw_data:
+                self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+            else: 
+                self.h5xs[sn] = fn_raw
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
             self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
             
@@ -184,9 +196,105 @@ class h5xs_an(h5xs):
         """ 
         if "qphi" not in self.proc_data[sn].keys():
             raise Exception(f"qphi data do not exist for {sn}.")
+    
+    
+    def process(self, N=8, max_c_size=1024, debug=True):
+        if debug is True:
+            t1 = time.time()
+            print("processing started, this may take a while ...")                
+
+        if self.pre_proc=="1D":
+            self.process1d(N, max_c_size, debug)
+        elif self.pre_proc=="2D":
+            self.process1d(N, max_c_size, debug)
+        else:
+            raise Exception(f"cannot deal with pre_proc = {self.pre_proc}")
+
+        if debug is True:
+            t2 = time.time()
+            print("done, time elapsed: %.2f sec" % (t2-t1))                
+        
             
+    def process1d(self, N=8, max_c_size=1024, debug=True):
+        qgrid = self.qgrid 
+        detectors = self.detectors              
+                
+        results = {}
+        pool = mp.Pool(N)
+        jobs = []
+        
+        for sn in self.h5xs.keys():
+            results[sn] = {}
+            if debug:
+                print(f"processing {sn} ...")
+            dh5 = self.h5xs[sn]
+
+            s = dh5.dset(dh5.det_name[self.detectors[0].extension]).shape
+            if len(s)==3 or len(s)==4:
+                n_total_frames = s[-3]  # fast axis
+            else:
+                raise Exception("don't know how to handle shape:", )
+            if n_total_frames<N*N/2:
+                Np = 1
+                c_size = N
+            else:
+                Np = N
+                c_size = int(n_total_frames/N)
+                if max_c_size>0 and c_size>max_c_size:
+                    Np = int(n_total_frames/max_c_size)+1
+                    c_size = int(n_total_frames/Np)
                     
-    def process(self, N=8, max_c_size=1024, debug=True, proc_1d=True):
+            # process data in group in hope to limit memory use
+            # the raw data could be stored in a 1d or 2d array
+            for i in range(Np):
+                if i==Np-1:
+                    nframes = n_total_frames - c_size*(Np-1)
+                else:
+                    nframes = c_size
+                    
+                if len(s)==3:
+                    images = [dh5.dset(dh5.det_name[det.extension])[i*c_size:i*c_size+nframes] for det in detectors]
+                    if N>1: # multi-processing, need to keep track of total number of active processes                    
+                        job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size, debug,
+                                                             detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
+                        jobs.append(job)
+                    else: # serial processing
+                        [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size, debug, 
+                                                        detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
+                        results[sn][fr1] = data                
+                else: # len(s)==4
+                    for j in range(s[0]):  # slow axis
+                        images = [dh5.dset(dh5.det_name[det.extension])[j,i*c_size:i*c_size+nframes] for det in detectors]
+                        if N>1: # multi-processing, need to keep track of total number of active processes
+                            job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1], debug,
+                                                                 detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
+                            jobs.append(job)
+                        else: # serial processing
+                            [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1], debug, 
+                                                            detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
+                            results[sn][fr1] = data                
+
+        if N>1:             
+            for job in jobs:
+                [sn, fr1, data] = job.get()[0]
+                results[sn][fr1] = data
+                print("data received: sn=%s, fr1=%d" % (sn,fr1) )
+            pool.close()
+            pool.join()
+
+        for sn in self.samples:
+            if sn not in results.keys():
+                continue
+            data = {}
+            frns = list(results[sn].keys())
+            frns.sort()
+            for k in results[sn][frns[0]].keys():
+                data[k] = []
+                for frn in frns:
+                    data[k].extend(results[sn][frn][k])
+            self.proc_data[sn]['azi_avg']['merged'] = data     
+                
+    def process2d(self, N=8, max_c_size=1024, debug=True):
         """ get trans values
             produce azimuthal average (if proc_1d==True) and/or q-phi maps
         """
@@ -271,7 +379,6 @@ class h5xs_an(h5xs):
             #self.proc_data[sn]['azi_avg']['merged'] = []
             for k in sorted(results.keys()):
                 for res2d,res2e in zip(*results[k]):
-                #for res1d,res1e,res2d,res2e in zip(*results[k]):
                     dd2 = MatrixWithCoords()
                     dd2.xc = qgrid
                     dd2.xc_label = "q"
