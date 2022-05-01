@@ -39,3 +39,6 @@ first version of h5xs_scan
 2022Jan:
 update after implementing functions for h5xs_scan
 
+2022Apr:
+reorganized notebooks
+
