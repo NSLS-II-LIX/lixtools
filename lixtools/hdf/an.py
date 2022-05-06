@@ -1,96 +1,146 @@
-from py4xs.data2d import Data2d,MatrixWithCoords
-from py4xs.slnxs import Data1d
-from py4xs.hdf import lsh5,h5xs,proc_merge1d
+import h5py,time
 import numpy as np
 import multiprocessing as mp
 import json,os,copy
+import fast_histogram as fh
+
+from py4xs.data2d import Data2d,MatrixWithCoords,unflip_array
+from py4xs.slnxs import Data1d
+from py4xs.hdf import lsh5,h5xs,proc_merge1d
+from py4xs.utils import get_bin_ranges_from_grid
 
 save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
                "MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], "unique": ["d", "err"]},
                "ndarray": {"shared": [], "unique": []}
               }
 
-
-def mp_proc(data):
-    pass
-
-def merge_d1s(d1s, avg_by_err=False):
-    s0 = Data1d()
-    s0.qgrid = d1s[0].qgrid
-    d_tot = np.zeros(s0.qgrid.shape)
-    d_max = np.zeros(s0.qgrid.shape)
-    d_min = np.zeros(s0.qgrid.shape)+1.e32
-    e_tot = np.zeros(s0.qgrid.shape)
-    c_tot = np.zeros(s0.qgrid.shape)
-    w_tot = np.zeros(s0.qgrid.shape)
-    
-    for d1 in d1s:        
-        # empty part of the data is nan
-        idx = ~np.isnan(d1.data)
-        c_tot[idx] += 1
-        if avg_by_err:
-            wt = 1/d1.err[idx]**2
-            d_tot[idx] += wt*d1.data[idx]
-            e_tot[idx] += d1.err[idx]**2*wt**2
-            w_tot[idx] += wt
-        else: # simple averaging
-            d_tot[idx] += d1.data[idx]
-            e_tot[idx] += d1.err[idx]
+def regularize(ar, prec):
+    """ adjust array elements so that they are evenly spaced
+        and limit digits to the specified precision
+    """
+    step = np.mean(np.diff(ar))
+    step = prec*np.floor(np.fabs(step)/prec+0.5)*np.sign(step)
+    off = np.mean(ar-np.arange(len(ar))*step)
+    off = prec*10*np.floor(np.fabs(off)/prec/10+0.5)*np.sign(off)
+    return off+np.arange(len(ar))*step
         
-        idx1 = (np.ma.fix_invalid(d1.data, fill_value=-1)>d_max).data
-        d_max[idx1] = d1.data[idx1]
-        idx2 = (np.ma.fix_invalid(d1.data, fill_value=1e32)<d_min).data
-        d_min[idx2] = d1.data[idx2]
-                
-    if avg_by_err:
-        s0.data = d_tot/w_tot
-        s0.err = np.sqrt(e_tot)/w_tot
-    else: # simple averaging
-        idx = (c_tot>0)
-        s0.data = d_tot
-        s0.err = e_tot
-        s0.data[idx] /= c_tot[idx]
-        s0.err[idx] /= np.sqrt(c_tot[idx])
-        s0.data[~idx] = np.nan
-        s0.err[~idx] = np.nan
+def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
+    """ figure out the scan shape and motor positions, assuming 2D grid scans 
+        i.e. sufficient to have a single set of x and y coordinates to specify the location
+    """
+    shape = dh5xs.header(sn)['shape']
+    assert(len(shape)==2)
+    dec = -int(np.log10(prec))
 
-    return s0
+    motors = dh5xs.header(sn)['motors']
+    pn = dh5xs.header(sn)['plan_name']
+    if pn=="raster":
+        snaking = True
+    elif "snaking" in dh5xs.header(sn).keys():
+        snaking = dh5xs.header(sn)["snaking"][-1]
+    else: 
+        snaking = False
+
+    if len(motors)!=2:
+        raise Exception(f"expecting two motors, got {motors}.")
+    # slow axis is the first motor 
+    spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
+    n = int(len(spos)/shape[0])
+    if n>1:
+        spos = spos[::n]         # in step scans, the slow axis position is reported every step
+    if force_uniform_steps:
+        spos = regularize(spos, prec)
+    spos = spos.round(dec)
+    
+    # for the fast axis, the Newport fly scan sometime repeats position data  
+    fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
+    n = int(len(fpos)/shape[0]/shape[1])
+    fpos = fpos[::n]         # remove redundancy, specific to fly scanning with Newport
+    fpos = fpos[:shape[1]]   # assume these positions are repeating
+    if force_uniform_steps:
+        fpos = regularize(fpos, prec)
+    fpos = fpos.round(dec)
+        
+    return {"shape": shape, "snaking": snaking, 
+            "fast_axis": {"motor": motors[1], "pos": list(fpos)}, 
+            "slow_axis": {"motor": motors[0], "pos": list(spos)}}  # json doesn't like numpy arrays
+
+
+
+def proc_merge1d(args):
+    """ utility function to perfrom azimuthal average and merge detectors
+    """
+    images,sn,nframes,starting_frame_no,debug,detectors,qgrid = args
+    ret = []
+    
+    if debug is True:
+        print("processing started: sample = %s, starting frame = #%d" % (sn, starting_frame_no))
+    for i in range(nframes):
+        d1s = []
+        for det in detectors:
+            dt = Data1d()
+            label = "%s_f%05d%s" % (sn, i+starting_frame_no, det.extension)
+            dt.load_from_2D(images[det.extension][i], det.exp_para, qgrid, 
+                            pre_process=det.pre_process, flat_cor=det.flat, mask=det.exp_para.mask,
+                            save_ave=False, label=label)
+            if det.dark is not None:
+                dt.data -= det.dark
+            dt.scale(1./det.fix_scale)
+            d1s.append(dt)
+    
+        dm = d1s[0]
+        for dm1 in d1s[1:]:
+            dm.merge(dm1)
+        ret.append(dm)
+            
+    if debug is True:
+        print("processing completed: ", sn, starting_frame_no)
+
+    return [sn, starting_frame_no, ret]
+
         
 def proc_merge2d(args):
-    dsets,nframes,starting_frame_no,debug,detectors,qgrid,phigrid = args
-        
-    ret_d2 = []
-    ret_e2 = []
-    ndet = len(detectors)
-    qms = [None for det in detectors]
-        
+    data,nframes,starting_frame_no,debug,parms,bin_ranges = args
+    
     if debug is True:
         print(f"processing started: starting frame = #{starting_frame_no}\r", end="")
-    for i in range(nframes):
-        for j,det in enumerate(detectors):
-            img = dsets[j][i]
-            d2 = Data2d(img, exp=det.exp_para)
-            cf = det.fix_scale*d2.exp.FSA*d2.exp.FPol
-            if det.flat is not None:
-                cf *= det.flat
-            qms[j] = d2.data.conv(qgrid, phigrid, d2.exp.Q, d2.exp.Phi, mask=d2.exp.mask, cor_factor=cf, interpolate='x')
-        if ndet>1:
-            qm = qms[0].merge(qms[1:])
-        else:
-            qm = qms[0].d
-        ret_d2.append(qm.d)
-        ret_e2.append(qm.err)
+
+    dQ,dPhi,dMask,dQPhiMask,dWeight = parms
+    ndet = len(dQ)
+    n_frames = data[0].shape[0]
+
+    cQPhiMask = ~dQPhiMask[0]
+    for i in range(1,ndet):
+        cQPhiMask &= ~dQPhiMask[i]   
+    q_bin_ranges,q_N,phi_range,phi_N = bin_ranges       
+    ret = np.zeros(shape=(n_frames, phi_N, q_N))
     
+    for i in range(ndet):
+        for n in range(n_frames):
+        # there should be no overlap between SAXS and WAXS, not physically possible
+            mm = np.vstack([fh.histogram2d(dQ[i], dPhi[i], bins=(qN, phi_N), range=[qrange, phi_range], 
+                                           weights=data[i][n][dMask[i]]) for qrange,qN in q_bin_ranges]).T
+            mm[dQPhiMask[i]]/=dWeight[i][dQPhiMask[i]]
+            ret[n][mm>0] = mm[mm>0]
+
+    for n in range(n_frames):
+        ret[n][cQPhiMask] = np.nan
     if debug is True:
         print(f"processing completed: {starting_frame_no}.                \r", end="")
 
-    return [starting_frame_no, [ret_d2, ret_e2]]
+    return [starting_frame_no, ret]
+
+
 
 class h5xs_an(h5xs):
     """ keep the detector information
         import data from raw h5 files, keep track of the file location
         copy the meta data, convert raw data into q-phi maps or azimuthal profiles
         can still show data, through the h5xs object for the raw data
+        
+        meta data such as scan or HPLC info should be dealt with separately
+        saving and loading
+        
     """
     def __init__(self, *args, Nphi=32, load_raw_data=True, pre_proc="2D", **kwargs):
         """ pre_proc: should be either 1D or 2D, determines whether to save q-phi maps or 
@@ -102,7 +152,7 @@ class h5xs_an(h5xs):
         
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
-            open(fn, 'w').close()
+            h5py.File(fn, 'w').close()
         super().__init__(*args, have_raw_data=False, **kwargs)
         self.proc_data = {}
         self.h5xs = {}
@@ -124,7 +174,6 @@ class h5xs_an(h5xs):
             else: 
                 self.h5xs[sn] = fn_raw
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
-            self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
             
     def list_data(self):
         for sn,d in self.proc_data.items(): 
@@ -143,8 +192,11 @@ class h5xs_an(h5xs):
     def show_data_qxy(self, sn, **kwargs):
         self.h5xs[sn].show_data_qxy(sn=sn, **kwargs)
         
-    def import_raw_data(self, fn_raw, sn=None, **kwargs):
-        """ create new group, copy header, get scan parameters, calculate q-phi map
+    def import_raw_data(self, fn_raw, sn=None, save_attr=["source", "header"], **kwargs):
+        """ create new group, copy header
+            save_attr: meta data that should be extracted from the raw data file
+                       for scanning data, this should be ["source", "header", 'scan']
+                       for HPLC data ???
         """
         dt = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
         if sn is None:
@@ -153,18 +205,25 @@ class h5xs_an(h5xs):
             raise Exception(f"cannot find data on {sn} in {fn_raw}.")
         
         self.h5xs[sn] = dt
+        self.enable_write(True)
         if not sn in self.attrs.keys():
             self.attrs[sn] = {}
         if not sn in self.fh5.keys():
             grp = self.fh5.create_group(sn)
         else:
             grp = self.fh5[sn]
-        self.attrs[sn]['source'] = os.path.realpath(fn_raw)
-        grp.attrs['source'] = self.attrs[sn]['source'] 
-        self.attrs[sn]['header'] = dt.header(sn)
-        grp.attrs['header'] = json.dumps(self.attrs[sn]['header'])
-        self.attrs[sn]['scan'] = get_scan_parms(dt, sn, **kwargs)
-        grp.attrs['scan'] = json.dumps(self.attrs[sn]['scan'])
+            
+        if "source" in save_attr:
+            self.attrs[sn]['source'] = os.path.realpath(fn_raw)
+            grp.attrs['source'] = self.attrs[sn]['source'] 
+        if "header" in save_attr:
+            self.attrs[sn]['header'] = dt.header(sn)
+            grp.attrs['header'] = json.dumps(self.attrs[sn]['header'])
+        if "scan" in save_attr:
+            self.attrs[sn]['scan'] = get_scan_parms(dt, sn, **kwargs)
+            grp.attrs['scan'] = json.dumps(self.attrs[sn]['scan'])
+
+        self.enable_write(False)
         
         if not sn in self.proc_data.keys():
             self.proc_data[sn] = {}
@@ -206,7 +265,7 @@ class h5xs_an(h5xs):
         if self.pre_proc=="1D":
             self.process1d(N, max_c_size, debug)
         elif self.pre_proc=="2D":
-            self.process1d(N, max_c_size, debug)
+            self.process2d(N, max_c_size, debug)
         else:
             raise Exception(f"cannot deal with pre_proc = {self.pre_proc}")
 
@@ -253,25 +312,25 @@ class h5xs_an(h5xs):
                     nframes = c_size
                     
                 if len(s)==3:
-                    images = [dh5.dset(dh5.det_name[det.extension])[i*c_size:i*c_size+nframes] for det in detectors]
+                    images = {det.extension:dh5.dset(dh5.det_name[det.extension])[i*c_size:i*c_size+nframes] for det in detectors}
                     if N>1: # multi-processing, need to keep track of total number of active processes                    
-                        job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size, debug,
-                                                             detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
+                        job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size,
+                                                             debug, detectors, self.qgrid)])
                         jobs.append(job)
                     else: # serial processing
-                        [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size, debug, 
-                                                        detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
+                        [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size,
+                                                        debug, detectors, self.qgrid)) 
                         results[sn][fr1] = data                
                 else: # len(s)==4
                     for j in range(s[0]):  # slow axis
-                        images = [dh5.dset(dh5.det_name[det.extension])[j,i*c_size:i*c_size+nframes] for det in detectors]
+                        images = {det.extension:dh5.dset(dh5.det_name[det.extension])[j,i*c_size:i*c_size+nframes] for det in detectors}
                         if N>1: # multi-processing, need to keep track of total number of active processes
-                            job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1], debug,
-                                                                 detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
+                            job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1],
+                                                                 debug, detectors, self.qgrid)])
                             jobs.append(job)
                         else: # serial processing
-                            [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1], debug, 
-                                                            detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
+                            [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1],
+                                                            debug, detectors, self.qgrid)) 
                             results[sn][fr1] = data                
 
         if N>1:             
@@ -285,14 +344,13 @@ class h5xs_an(h5xs):
         for sn in self.samples:
             if sn not in results.keys():
                 continue
-            data = {}
+            data = []
             frns = list(results[sn].keys())
             frns.sort()
-            for k in results[sn][frns[0]].keys():
-                data[k] = []
-                for frn in frns:
-                    data[k].extend(results[sn][frn][k])
-            self.proc_data[sn]['azi_avg']['merged'] = data     
+            for frn in frns:
+                data.extend(results[sn][frn])
+            self.add_proc_data(sn, 'azi_avg', 'merged', data)     
+
                 
     def process2d(self, N=8, max_c_size=1024, debug=True):
         """ get trans values
@@ -301,8 +359,34 @@ class h5xs_an(h5xs):
         qgrid = self.qgrid 
         phigrid = self.phigrid
         detectors = self.detectors
+        phi_range = [-180, 180]
+        phi_N = self.Nphi
+        q_bin_ranges = get_bin_ranges_from_grid(qgrid)
+        bin_ranges = [q_bin_ranges,len(qgrid),phi_range,phi_N] 
         
         print("this might take a while ...")
+        
+        # prepare the info needed for processing
+        dQ = {}
+        dPhi = {}
+        dMask = {}
+        dQPhiMask = {}
+        dWeight = {}
+        
+        for i in range(len(detectors)):
+            exp = detectors[i].exp_para
+            dMask[i] = ~unflip_array(exp.mask.map, exp.flip)
+            dQ[i] = unflip_array(exp.Q, exp.flip)[dMask[i]]
+            dPhi[i] = unflip_array(exp.Phi, exp.flip)[dMask[i]]
+            ones = np.ones_like(dQ[i])
+            dWeight[i] = np.vstack([fh.histogram2d(dQ[i], dPhi[i], bins=(qN, phi_N), range=[qrange, phi_range], weights=ones) 
+                                 for qrange,qN in q_bin_ranges]).T
+            dWeight[i] *= detectors[i].fix_scale
+            dQPhiMask[i] = (dWeight[i]>0)
+        parms = [dQ,dPhi,dMask,dQPhiMask,dWeight]
+        
+        # for corrections: polarization and solid angle 
+        #QPhiCorF = np.ones_like()
 
         for sn in self.h5xs.keys():
             if debug:
@@ -345,19 +429,19 @@ class h5xs_an(h5xs):
                 if len(s)==3:
                     images = [dh5.dset(dh5.det_name[det.extension])[i*c_size:i*c_size+nframes] for det in detectors]
                     if N>1: # multi-processing, need to keep track of total number of active processes                    
-                        job = pool.map_async(proc_merge, [(images, nframes, i*c_size, debug, detectors, qgrid, phigrid)])
+                        job = pool.map_async(proc_merge2d, [(images, nframes, i*c_size, debug, parms, bin_ranges)])
                         jobs.append(job)
                     else: # serial processing
-                        [fr1, data] = proc_merge((images, nframes, i*c_size, debug, detectors, qgrid, phigrid))
+                        [fr1, data] = proc_merge2d((images, nframes, i*c_size, debug, parms, bin_ranges))
                         results[fr1] = data                
                 else: # len(s)==4
                     for j in range(s[0]):  # slow axis
                         images = [dh5.dset(dh5.det_name[det.extension])[j,i*c_size:i*c_size+nframes] for det in detectors]
                         if N>1: # multi-processing, need to keep track of total number of active processes
-                            job = pool.map_async(proc_merge, [(images, nframes, i*c_size+j*s[1], debug, detectors, qgrid, phigrid)])
+                            job = pool.map_async(proc_merge2d, [(images, nframes, i*c_size+j*s[1], debug, parms, bin_ranges)])
                             jobs.append(job)
                         else: # serial processing
-                            [fr1, data] = proc_merge((images, nframes, i*c_size+j*s[1], debug, detectors, qgrid, phigrid)) 
+                            [fr1, data] = proc_merge2d((images, nframes, i*c_size+j*s[1], debug, parms, bin_ranges)) 
                             results[fr1] = data
                             print(len(data), len(data[0]))
 
@@ -369,24 +453,18 @@ class h5xs_an(h5xs):
                 pool.close()
                 pool.join()
     
-            if not sn in self.proc_data.keys():
-                self.proc_data[sn] = {}
-            if not "qphi" in self.proc_data[sn].keys():
-                self.proc_data[sn]['qphi'] = {}
-            self.proc_data[sn]['qphi']['merged'] = []
-            #if not "azi_avg" in self.proc_data[sn].keys():
-            #    self.proc_data[sn]['azi_avg'] = {}
-            #self.proc_data[sn]['azi_avg']['merged'] = []
+            data = []
             for k in sorted(results.keys()):
-                for res2d,res2e in zip(*results[k]):
+                for i in range(len(results[k])):
                     dd2 = MatrixWithCoords()
                     dd2.xc = qgrid
                     dd2.xc_label = "q"
                     dd2.yc = phigrid
                     dd2.yc_label = "phi"
-                    dd2.d = res2d
-                    dd2.err = res2e
-                    self.proc_data[sn]['qphi']['merged'].append(dd2)
+                    dd2.d = results[k][i]
+                    dd2.err = None
+                    data.append(dd2)
+            self.add_proc_data(sn, 'qphi', 'merged', data)
 
             if debug:
                 print(f"done processing {sn}.             ")
@@ -418,7 +496,7 @@ class h5xs_an(h5xs):
     
     def pack(self, sn, data_key, sub_key):
         """ this is for packing processed data, which should be stored under self.proc_data as a dictionary
-            sn="overall" is merged from all samples in the h5xs_scan object
+            sn="overall" is merged from all samples in the h5xs_an object
             the key is the name/identifier of the processed data
                 e.g. attrs, qphi, azi_avg, maps, tomo 
             all the data stored under the data_key are of the same data type 
@@ -575,49 +653,3 @@ class h5xs_an(h5xs):
                 self.proc_data[sn]['qphi']['subtracted'].append(m1)
         
                                     
-    def make_map_from_attr(self, sname, attr_name):
-        """ for convenience in data processing, all attributes extracted from the data are saved as
-            proc_data[sname]["attrs"][attr_name]
-            
-            for visiualization and for further data processing (e.g. run tomopy), these attributes need
-            to be re-organized (de-snaking, merging) to reflect the shape of the scan/sample view
-            
-            sn="overall" is reserved for merging data from partial scans
-        """
-
-        if sname=="overall":
-            samples = self.samples
-        elif sname in self.samples:
-            samples = [sname]
-        else:
-            raise exception(f"sample {sn} does not exist") 
-        
-        maps = []
-        for sn in samples:
-            if not 'scan' in self.attrs[sn].keys():
-                get_scan_parms(self.h5xs[sn], sn)
-            if attr_name not in self.proc_data[sn]['attrs'].keys():
-                raise Exception(f"attribue {attr_name} cannot be found for {sn}.")
-            data = self.proc_data[sn]['attrs'][attr_name].reshape(self.attrs[sn]['scan']['shape'])
-            m = MatrixWithCoords()
-            m.d = np.copy(data)
-            m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
-            m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
-            m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
-            m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
-            if self.attrs[sn]['scan']['snaking']:
-                print("de-snaking")
-                for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
-                    m.d[i] = np.flip(m.d[i])
-            if "maps" not in self.proc_data[sn].keys():
-                self.proc_data[sn]['maps'] = {}
-            maps.append(m)
-            self.proc_data[sn]['maps'][attr_name] = m
-    
-        # assume the scans are of the same type, therefore start from the same direction
-        if sname=="overall":
-            mm = maps[0].merge(maps[1:])
-            if "overall" not in self.proc_data.keys():
-                self.proc_data['overall'] = {}
-                self.proc_data['overall']['maps'] = {}
-            self.proc_data['overall']['maps'][attr_name] = mm
