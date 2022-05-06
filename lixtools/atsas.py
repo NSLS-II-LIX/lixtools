@@ -4,25 +4,9 @@ import numpy as np
 from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
+from py4xs.utils import run
 
 atsas_path = ""
-
-def run(cmd, path="", ignoreErrors=True, returnError=False, debug=False):
-    """ cmd should be a list, e.g. ["ls", "-lh"]
-        path is for the cmd, not the same as cwd
-    """
-    cmd[0] = path+cmd[0]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = p.communicate()
-    if debug:
-        print(out.decode(), err.decode())
-    if len(err)>0 and not ignoreErrors:
-        print(err.decode())
-        raise Exception(err.decode())
-    if returnError:
-        return out.decode(),err.decode()
-    else:
-        return out.decode()
     
 def extract_vals(txt, dtype=float, strip=None, debug=False):
     if strip is not None:
