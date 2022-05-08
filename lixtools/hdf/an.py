@@ -98,7 +98,7 @@ def proc_merge1d(args):
 
     return [sn, starting_frame_no, ret]
 
-        
+
 def proc_merge2d(args):
     data,nframes,starting_frame_no,debug,parms,bin_ranges = args
     
@@ -145,11 +145,7 @@ class h5xs_an(h5xs):
     def __init__(self, *args, Nphi=32, load_raw_data=True, pre_proc="2D", **kwargs):
         """ pre_proc: should be either 1D or 2D, determines whether to save q-phi maps or 
                     azimuhtal averages as the pre-processed data
-        """
-        if pre_proc not in ['1D', '2D']:
-            raise Exception(f"can't handle pre_proc = {pre_proc}, must be either 1D or 2D")
-        self.pre_proc = pre_proc
-        
+        """        
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
             h5py.File(fn, 'w').close()
@@ -157,9 +153,25 @@ class h5xs_an(h5xs):
         self.proc_data = {}
         self.h5xs = {}
         
+        self.enable_write(True)
+        if "pre_proc" in self.fh5.attrs:
+            pre_proc0 = self.fh5.attrs["pre_proc"]
+            if pre_proc0!=pre_proc:
+                print(f"Warning: using existing pre_proc type {pre_proc0} instead of {pre_proc}")
+                pre_proc = pre_proc0
+        else:
+            self.fh5.attrs["pre_proc"] = pre_proc    
+        self.pre_proc = pre_proc
         if pre_proc=="2D":
+            if "Nphi" in self.fh5.attrs:
+                Nphi0 = int(self.fh5.attrs['Nphi'])
+                if Nphi0!=Nphi:
+                    print(f"Warning: using existing Nphi={Nphi0} instead of {Nphi}")
+            else:
+                self.fh5.attrs['Nphi'] = Nphi
             self.Nphi = Nphi
             self.phigrid = np.linspace(-180, 180, self.Nphi)
+        self.enable_write(False)
         
         # if there are raw data file info, prepare the read only h5xs objects in case needed
         self.samples = list(self.fh5.keys())
@@ -174,7 +186,7 @@ class h5xs_an(h5xs):
             else: 
                 self.h5xs[sn] = fn_raw
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
-            
+
     def list_data(self):
         for sn,d in self.proc_data.items(): 
             print(sn)
@@ -182,22 +194,25 @@ class h5xs_an(h5xs):
                 print("++", dk)  # should also print data type
                 for sk,sd in dd.items(): # sub key
                     print("++++", sk)  # should also print data size
-                    
+
     def show_data(self, sn, **kwargs):
-        self.h5xs[sn].show_data(sn=sn, **kwargs)
-        
+        return self.h5xs[sn].show_data(sn=sn, detectors=self.detectors, **kwargs)
+
     def show_data_qphi(self, sn, **kwargs):
-        self.h5xs[sn].show_data_qphi(sn=sn, **kwargs)
-        
+        return self.h5xs[sn].show_data_qphi(sn=sn, detectors=self.detectors, **kwargs)
+
     def show_data_qxy(self, sn, **kwargs):
-        self.h5xs[sn].show_data_qxy(sn=sn, **kwargs)
-        
-    def import_raw_data(self, fn_raw, sn=None, save_attr=["source", "header"], **kwargs):
+        return self.h5xs[sn].show_data_qxy(sn=sn, detectors=self.detectors, **kwargs)
+
+    def import_raw_data(self, fn_raw, sn=None, save_attr=["source", "header"], debug=False, **kwargs):
         """ create new group, copy header
             save_attr: meta data that should be extracted from the raw data file
                        for scanning data, this should be ["source", "header", 'scan']
                        for HPLC data ???
         """
+        if debug:
+            print(f"importing meta data from {fn_raw} ...")
+        
         dt = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
         if sn is None:
             sn = dt.samples[0]
@@ -230,7 +245,7 @@ class h5xs_an(h5xs):
         self.list_samples(quiet=True)
         
         return sn
-    
+
     def get_mon(self, sn, *args, **kwargs):
         if not sn in self.h5xs.keys():
             raise Exception(f"no raw data on {sn}.")
@@ -250,13 +265,13 @@ class h5xs_an(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
-    def get_d1s_from_d2s(self, sn, N=8):
-        """ calculate azi_avg from qphi
-        """ 
-        if "qphi" not in self.proc_data[sn].keys():
-            raise Exception(f"qphi data do not exist for {sn}.")
-    
-    
+    def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, **kwargs):
+        """ extract an attribute from the pre-processed data using the specified function
+            and source of the data (data_key/sub_key)
+        """
+        data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
+        self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
+        
     def process(self, N=8, max_c_size=1024, debug=True):
         if debug is True:
             t1 = time.time()
@@ -272,8 +287,7 @@ class h5xs_an(h5xs):
         if debug is True:
             t2 = time.time()
             print("done, time elapsed: %.2f sec" % (t2-t1))                
-        
-            
+
     def process1d(self, N=8, max_c_size=1024, debug=True):
         qgrid = self.qgrid 
         detectors = self.detectors              
@@ -351,7 +365,6 @@ class h5xs_an(h5xs):
                 data.extend(results[sn][frn])
             self.add_proc_data(sn, 'azi_avg', 'merged', data)     
 
-                
     def process2d(self, N=8, max_c_size=1024, debug=True):
         """ get trans values
             produce azimuthal average (if proc_1d==True) and/or q-phi maps
@@ -388,6 +401,9 @@ class h5xs_an(h5xs):
         # for corrections: polarization and solid angle 
         #QPhiCorF = np.ones_like()
 
+        if N>1:
+            pool = mp.Pool(N)
+
         for sn in self.h5xs.keys():
             if debug:
                 print(f"processing {sn} ...")
@@ -416,9 +432,7 @@ class h5xs_an(h5xs):
                     c_size = int(n_total_frames/Np)
         
             results = {}
-            if N>1:
-                pool = mp.Pool(N)
-                jobs = []
+            jobs = []
                 
             for i in range(Np):
                 if i==Np-1:
@@ -445,7 +459,9 @@ class h5xs_an(h5xs):
                             results[fr1] = data
                             print(len(data), len(data[0]))
 
-            if N>1:             
+            if N>1: 
+                if debug:
+                    print(f"{len(jobs)} jobs distributed to a pool of {N} processes ...")
                 for job in jobs:
                     [fr1, data] = job.get()[0]
                     results[fr1] = data
@@ -477,6 +493,8 @@ class h5xs_an(h5xs):
                 save_sns += ["overall"]
         elif not isinstance(save_sns, list):
             save_sns = [save_sns]
+            
+        self.enable_write(True)
         for sn in save_sns:
             dks = self.proc_data[sn].keys()
             if save_data_keys is not None:
@@ -492,6 +510,8 @@ class h5xs_an(h5xs):
                 for sub_key in sks:
                     print(f"{sn}, {data_key}, {sub_key}        \r", end="")
                     self.pack(sn, data_key, sub_key)
+
+        self.enable_write(False)
         print("done.                      ")
     
     def pack(self, sn, data_key, sub_key):
@@ -617,8 +637,7 @@ class h5xs_an(h5xs):
                                     data[i].__dict__[f] = h5data[f][i]
                         self.proc_data[sn][data_key][sub_key] = data
             print("done.                                           ")
-
-            
+    
     def qphi_bkgsub(self, bsn, bfrns):
         """ background subtraction, using the specified sample name and frame numbers 
             also correct/normalize for transmitted intensity, using the bkg trans as the reference value
@@ -651,5 +670,4 @@ class h5xs_an(h5xs):
                 m1.d = mm.d*sc - dbkg.d
                 m1.err = mm.err*sc   # needs work here
                 self.proc_data[sn]['qphi']['subtracted'].append(m1)
-        
-                                    
+

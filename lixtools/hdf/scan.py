@@ -32,8 +32,7 @@ class h5xs_scan(h5xs_an):
             fast_axis = self.attrs[self.samples[0]]['scan']['fast_axis']['motor']
             exp = self.attrs[self.samples[0]]['header']['pilatus']['exposure_time']
             self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
-                         force_synch=force_synch, force_synch_trig=force_synch_trig)
-    
+                         force_synch=force_synch, force_synch_trig=force_synch_trig)    
                                  
     def make_map_from_attr(self, sname, attr_name):
         """ for convenience in data processing, all attributes extracted from the data are saved as
