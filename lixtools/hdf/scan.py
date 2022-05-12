@@ -173,7 +173,7 @@ class h5xs_scan(h5xs_an):
             print(f"saving data                         ")        
         self.save_data(save_sns=sn, save_data_keys=["tomo"])
 
-def gen_scan_report(fn):
+def gen_scan_report(fn, client=None):
     dn = os.path.dirname(fn)
     if dn == "":
         dn = "."
@@ -198,6 +198,8 @@ def gen_scan_report(fn):
     with open(fn1, 'r+') as fh:
         txt = fh.read()
         txt = re.sub('00template00.h5', fn, txt)
+        if client:
+            txt = re.sub('00scheduler_addr00', client.scheduler.addr, txt)
         fh.seek(0)
         fh.write(txt)
         fh.truncate()
