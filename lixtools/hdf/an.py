@@ -292,9 +292,7 @@ class h5xs_an(h5xs):
         if not sn in self.h5xs.keys():
             raise Exception(f"no raw data on {sn}.")
         self.h5xs[sn].get_mon(sn, *args, **kwargs)
-        if sn not in self.d0s.keys():
-            self.d0s[sn] = {}
-        if 'attrs' not in self.d0s[sn].keys():
+        if 'attrs' not in self.proc_data[sn].keys():
             self.proc_data[sn]['attrs'] = {}
         self.proc_data[sn]['attrs']["transmitted"] = self.h5xs[sn].d0s[sn]["transmitted"]
         self.proc_data[sn]['attrs']["incident"] = self.h5xs[sn].d0s[sn]["incident"]
