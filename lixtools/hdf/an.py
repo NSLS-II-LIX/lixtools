@@ -383,28 +383,6 @@ class h5xs_an(h5xs):
                         results[sn][fr1] = data
                     fcnt += nframes
                     
-            #    if len(s)==3:
-            #        images = {det.extension:dh5.dset(dh5.det_name[det.extension])[i*c_size:i*c_size+nframes] for det in detectors}
-            #        if N>1: # multi-processing, need to keep track of total number of active processes                    
-            #            job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size,
-            #                                                 debug, detectors, self.qgrid)])
-            #            jobs.append(job)
-            #        else: # serial processing
-            #            [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size,
-            #                                            debug, detectors, self.qgrid)) 
-            #            results[sn][fr1] = data                
-            #    else: # len(s)==4
-            #        for j in range(s[0]):  # slow axis
-            #            images = {det.extension:dh5.dset(dh5.det_name[det.extension])[j,i*c_size:i*c_size+nframes] for det in detectors}
-            #            if N>1: # multi-processing, need to keep track of total number of active processes
-            #                job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1],
-            #                                                     job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1],
-            #                jobs.append(job)
-            #            else: # serial processing
-            #                [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1],
-            #                                                debug, detectors, self.qgrid)) 
-            #                results[sn][fr1] = data                
-
         if N>1:             
             for job in jobs:
                 [sn, fr1, data] = job.get()[0]
@@ -579,26 +557,6 @@ class h5xs_an(h5xs):
                         results[fr1] = data
                     fcnt += nframes
                 
-                #if len(s)==3:
-                #    images = [dh5.dset(dh5.det_name[det.extension])[i*c_size:i*c_size+nframes] for det in detectors]
-                #    if N>1: # multi-processing, need to keep track of total number of active processes                    
-                #        job = pool.map_async(proc_merge2d, [(images, nframes, i*c_size, debug, parms, bin_ranges)])
-                #        jobs.append(job)
-                #    else: # serial processing
-                #        [fr1, data] = proc_merge2d((images, nframes, i*c_size, debug, parms, bin_ranges))
-                #        results[fr1] = data                
-                #else: # len(s)==4
-                #    for j in range(s[0]):  # slow axis
-                #        images = [dh5.dset(dh5.det_name[det.extension])[j,i*c_size:i*c_size+nframes] for det in detectors]
-                #        if N>1: # multi-processing, need to keep track of total number of active processes
-                #            job = pool.map_async(proc_merge2d, [(images, nframes, i*c_size+j*s[1], debug, parms, bin_ranges)])
-                #            jobs.append(job)
-                #        else: # serial processing
-                #            [fr1, data] = proc_merge2d((images, nframes, i*c_size+j*s[1], debug, parms, bin_ranges)) 
-                #            results[fr1] = data
-                #            print(len(data), len(data[0]))
-
-            #dh5.fh5 = h5py.File(dh5.fn, "r", swmr=True)
             if N>1: 
                 for job in jobs:
                     [sn, fr1, data] = job.get()[0]
@@ -620,6 +578,24 @@ class h5xs_an(h5xs):
                     data.append(dd2)
             self.add_proc_data(sn, 'qphi', 'merged', data)
 
+    def export_data(self, fn):
+        """ export all data under "overall" is there are multiple samples
+        """
+        if len(self.h5xs)==1:
+            sn = self.samples[0]
+        elif 'overall' not in self.proc_data.keys():
+            raise Exception(f"Expecting overall data but not found ...")
+        else:
+            sn = "overall"
+        
+        fh5 = h5py.File(fn, "w-")  # fail if the file exists
+        dks = self.proc_data[sn].keys()
+        for data_key in dks:
+            sks = self.proc_data[sn][data_key].keys()
+            for sub_key in sks:
+                print(f"{sn}, {data_key}, {sub_key}        \r", end="")
+                self.pack(sn, data_key, sub_key, fh5=fh5)
+        fh5.close()
     
     def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None):
         print("saving processed data ...")
@@ -650,7 +626,7 @@ class h5xs_an(h5xs):
         self.enable_write(False)
         print("done.                      ")
     
-    def pack(self, sn, data_key, sub_key):
+    def pack(self, sn, data_key, sub_key, fh5=None):
         """ this is for packing processed data, which should be stored under self.proc_data as a dictionary
             sn="overall" is merged from all samples in the h5xs_an object
             the key is the name/identifier of the processed data
@@ -677,11 +653,12 @@ class h5xs_an(h5xs):
             print(sn,data_key,sub_key)
             raise Exception(f"{dtype} is not supported for packing.")
 
-        fh5 = self.fh5
+        if fh5 is None:
+            fh5 = self.fh5
         # the group fh5[sn] should already exist, created when importing raw data
         # except for "overall"
-        if not sn in self.fh5.keys():
-            grp = self.fh5.create_group(sn)
+        if not sn in fh5.keys():
+            grp = fh5.create_group(sn)
         else:
             grp = fh5[sn]
 
