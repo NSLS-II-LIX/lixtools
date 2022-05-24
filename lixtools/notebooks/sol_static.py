@@ -184,6 +184,7 @@ def display_solHT_data(fn, atsas_path="", read_only=False):
         dt.export_d1s(sn, path="processed/", save_subtracted=exportSubtractedCB.value)
         dt.update_h5()
         
+    plt.ion()
     onChangeSample(None)
     btnUpdate.on_click(onUpdatePlot)
     subtractCB.observe(onShowSubChanged)

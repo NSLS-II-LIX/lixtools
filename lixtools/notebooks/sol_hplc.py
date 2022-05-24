@@ -356,6 +356,7 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
     btnReport.on_click(report)
     btnExport.on_click(export)
     
+    plt.ion()
     updatePlot(None)
     
     return dt
