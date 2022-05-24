@@ -67,9 +67,11 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
     dt.normalize_int()
 
     if "run_type" not in dt.fh5['/'].attrs.keys():
+        dt.enable_write(True)
         dt.fh5['/'].attrs['run_type'] = 'SEC'
         dt.fh5['/'].attrs['instrument'] = "LiX"
         dt.fh5.flush()
+        dt.enable_write(False)
     elif dt.fh5['/'].attrs['run_type']!='SEC':
         raise Exception(f"this h5 has been assigned an incompatible run_type: {dt.fh5['/'].attrs['run_type']}")          
               

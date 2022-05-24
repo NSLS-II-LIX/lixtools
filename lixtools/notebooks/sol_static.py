@@ -20,9 +20,11 @@ def display_solHT_data(fn, atsas_path="", read_only=False):
         os.mkdir("processed")
     
     if "run_type" not in dt.fh5['/'].attrs.keys():
+        dt.enable_write(True)
         dt.fh5['/'].attrs['run_type'] = 'static'
         dt.fh5['/'].attrs['instrument'] = 'LiX'
         dt.fh5.flush()
+        dt.enable_write(False)
     elif dt.fh5['/'].attrs['run_type']!='static':
         raise Exception(f"this h5 has been assigned an incompatible run_type: {dt.fh5['/'].attrs['run_type']}")
     
