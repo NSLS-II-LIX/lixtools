@@ -298,6 +298,15 @@ class h5xs_an(h5xs):
         self.proc_data[sn]['attrs']["incident"] = self.h5xs[sn].d0s[sn]["incident"]
         self.proc_data[sn]['attrs']["transmission"] = self.h5xs[sn].d0s[sn]["transmission"]
     
+    def has_proc_data(self, sn, data_key, sub_key):
+        if not sn in self.proc_data.keys():
+            return False
+        if not data_key in self.proc_data[sn].keys():
+            return False
+        if not sub_key in self.proc_data[sn][data_key].keys():
+            return False
+        return True
+        
     def add_proc_data(self, sn, data_key, sub_key, data):
         if sn not in self.proc_data.keys():
             self.proc_data[sn] = {}
