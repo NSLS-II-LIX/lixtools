@@ -184,9 +184,13 @@ class h5xs_an(h5xs):
         saving and loading
         
     """
-    def __init__(self, *args, Nphi=32, load_raw_data=True, pre_proc="2D", **kwargs):
+    def __init__(self, *args, 
+                 Nphi=32, load_raw_data=True, pre_proc="2D", replace_path={}, 
+                 **kwargs):
         """ pre_proc: should be either 1D or 2D, determines whether to save q-phi maps or 
-                    azimuhtal averages as the pre-processed data
+                azimuhtal averages as the pre-processed data
+            replace_path: should be a dictionary {old_path: new_path}
+                this is useful when the source raw data files have been moved
         """        
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
@@ -222,7 +226,18 @@ class h5xs_an(h5xs):
             self.attrs['overall'] = {}
         for sn in self.samples:
             self.attrs[sn] = {}
-            fn_raw = self.fh5[sn].attrs['source']
+            fn_raw0 = self.fh5[sn].attrs['source']
+            fn_raw_path = os.path.dirname(fn_raw0)
+            if fn_raw_path in replace_path.keys():
+                fn_raw = fn_raw0.replace(fn_raw_path, replace_path[fn_raw_path])
+            else:
+                fn_raw = fn_raw0
+            if not os.path.exists(fn_raw):
+                raise Exception(f"raw data file {fn_raw} does not exist ...")
+            if fn_raw!=fn_raw0:
+                self.enable_write(True)
+                self.fh5[sn].attrs['source'] = fn_raw
+                self.enable_write(False)
             if load_raw_data:
                 self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
             else: 
