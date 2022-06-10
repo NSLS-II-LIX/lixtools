@@ -97,8 +97,9 @@ def validate_sample_list(xls_fn,
     if sh_name is None:
         sh_name = xl.sheet_names[0]
     msg.append(f"reading data from {sh_name} ...") 
-    df = xl.parse(sh_name, dtype={'Volume (uL)': float})    
-
+    df = xl.parse(sh_name)
+    df['Volume (uL)'] = pd.to_numeric(df['Volume (uL)'], errors='coerce')
+    
     # template spreadsheet is protected, "lix template"
     if check_template:
         sdict = df.to_dict()['Notes']
