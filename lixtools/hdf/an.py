@@ -138,12 +138,12 @@ def proc_merge2d(args):
     return [sn, ret]
 
 def proc_merge2d0(args):
-    images,sn,nframes,starting_frame_no,debug,parms,bin_ranges = args
-    fn,img_grps,idx = images
+    images,sn,starting_frame_cnt,debug,parms,bin_ranges = args
+    fn,img_grps,idx,nstart,nframes = images   
     
     fh5 = h5py.File(fn, "r", swmr=True)
     if debug is True:
-        print(f"processing started: {sn}, frame #{starting_frame_no}            \r", end="")
+        print(f"processing started: {sn}, frame #{starting_frame_cnt}            \r", end="")
 
     dQ,dPhi,dMask,dQPhiMask,dWeight = parms
     ndet = len(dQ)
@@ -155,9 +155,9 @@ def proc_merge2d0(args):
     ret = np.zeros(shape=(nframes, phi_N, q_N))
     
     for i in range(ndet):
-        data = fh5[img_grps[i]][idx][starting_frame_no:starting_frame_no+nframes]
+        data = fh5[img_grps[i]][idx][nstart:nstart+nframes]
         if debug:
-            print(f"- {img_grps[i]}, {idx}, {starting_frame_no}:{starting_frame_no+nframes}      \r", end="")
+            print(f"- {img_grps[i]}, {idx}, {nstart}:{nstart+nframes}      \r", end="")
         for n in range(nframes):
         # there should be no overlap between SAXS and WAXS, not physically possible
             mm = np.vstack([fh.histogram2d(dQ[i], dPhi[i], bins=(qN, phi_N), range=[qrange, phi_range], 
@@ -168,10 +168,10 @@ def proc_merge2d0(args):
     for n in range(nframes):
         ret[n][cQPhiMask] = np.nan
     if debug is True:
-        print(f"processing completed: {sn}, frame #{starting_frame_no}               \r", end="")
+        print(f"processing completed: {sn}, frame #{starting_frame_cnt}               \r", end="")
         
     fh5.close()
-    return [sn, starting_frame_no, ret]
+    return [sn, starting_frame_cnt, ret]
 
 
 class h5xs_an(h5xs):
@@ -344,7 +344,10 @@ class h5xs_an(h5xs):
         if self.pre_proc=="1D":
             self.process1d(N, max_c_size, debug)
         elif self.pre_proc=="2D":
-            self.process2d(N, max_c_size, debug)
+            if len(self.h5xs)>1: # one process per sample
+                self.process2d(N, max_c_size, debug)
+            else: # single sample, split data 
+                self.process2d0(N, max_c_size, debug)
         else:
             raise Exception(f"cannot deal with pre_proc = {self.pre_proc}")
 
@@ -572,12 +575,12 @@ class h5xs_an(h5xs):
                     nframes = c_size
                 
                 for idx, x in np.ndenumerate(t):  # idx should enumerate the outter-most indices
-                    images = [dh5.fn, img_grp, idx]
+                    images = [dh5.fn, img_grp, idx, i*c_size, nframes]
                     if N>1: # multi-processing, need to keep track of total number of active processes
-                        job = pool.map_async(proc_merge2d, [(images, sn, nframes, fcnt, debug, parms, bin_ranges)])  
+                        job = pool.map_async(proc_merge2d0, [(images, sn, fcnt, debug, parms, bin_ranges)])  
                         jobs.append(job)
                     else: # serial processing
-                        [sn, fr1, data] = proc_merge2d((images, sn, nframes, fcnt, debug, parms, bin_ranges))
+                        [sn, fr1, data] = proc_merge2d0((images, sn, fcnt, debug, parms, bin_ranges))
                         results[fr1] = data
                     fcnt += nframes
                 
