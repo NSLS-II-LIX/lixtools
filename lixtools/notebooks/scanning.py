@@ -2,10 +2,11 @@ import ipywidgets
 from IPython.display import display,clear_output
 import numpy as np
 import json,os
+from py4xs.data2d import Data2d,unflip_array,flip_array
 from py4xs.hdf import lsh5
+from py4xs.plot import show_data
 from lixtools.hdf import h5xs_an,h5xs_scan
 import pylab as plt
-from py4xs.data2d import Data2d,unflip_array,flip_array
 
 scan_GUI_par = {
     'roi_qrange': '0.1~0.15,1.0~1.1,1.58~1.63',
