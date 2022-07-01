@@ -32,7 +32,7 @@ class h5xs_scan(h5xs_an):
         for sn in self.samples:
             self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
             
-    def import_raw_data(self, fn_raw, sn=None, force_uniform_steps=True, prec=0.001,
+    def import_raw_data(self, fn_raw, sn=None, force_uniform_steps=True, prec=0.001, exp=1,
                         force_synch='auto', force_synch_trig=0, **kwargs):
         """ create new group, copy header, get scan parameters, calculate q-phi map
         """
@@ -43,7 +43,11 @@ class h5xs_scan(h5xs_an):
             sn = super().import_raw_data(fnr, save_attr=["source", "header", "scan"], 
                                          force_uniform_steps=force_uniform_steps, prec=prec, **kwargs)
             fast_axis = self.attrs[self.samples[0]]['scan']['fast_axis']['motor']
-            exp = self.attrs[self.samples[0]]['header']['pilatus']['exposure_time']
+            try:
+                t = self.attrs[self.samples[0]]['header']['pilatus']['exposure_time']
+                exp = t
+            except:
+                print(f"Unable to find meta data on exposure time, assuming {exp:.2f}s")
             self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
                          force_synch=force_synch, force_synch_trig=force_synch_trig)    
                                  
