@@ -85,7 +85,11 @@ def display_data_scanning(dt):
             ax1 = fig.add_axes([0.1, 0.5, 0.5, 0.4])
             ax2 = fig.add_axes([0.1, 0.1, 0.5, 0.25])
             ax3 = fig.add_axes([0.75, 0.5, 0.2, 0.4])
-            dm = dt.proc_data[sn][dk][sk][frn]
+            try:
+                dm = dt.proc_data[sn][dk][sk][frn]
+            except:
+                txOutput.value = f"{sn}, {dk}, {sk}, {frn}"
+                
             if symmCbox.value:
                 dm = dm.apply_symmetry()
             sc_factor = ddScale.value
@@ -129,29 +133,35 @@ def display_data_scanning(dt):
         plt.ion()
     
     def onChangeSample(w):
+        if w['name']!='value':
+            return
         sn = ddSample.value
         dk = ddDataKey.value
-        if not dk in dt.proc_data[sn].keys():
-            ddDataKey.options = dt.proc_data[sn].keys()
-            ddDataKey.value = ddDataKey.options[-1]
-            display(ddDataKey)
+        klist = list(dt.proc_data[sn].keys())
+        ddDataKey.options = klist
+        if not dk in klist:
+            ddDataKey.value = klist[-1]
         else:
+            txOutput.value = f"sample changed: {sn} \n"
             updatePlots(None)
     
     def onChangeDataKey(w):
+        if w['name']!='value':
+            return
         sn = ddSample.value
         dk = ddDataKey.value
-        if not dk in dt.proc_data[sn].keys():
-            return
         sk = ddSubKey.value
-        if not sk in dt.proc_data[sn][dk].keys():
-            ddSubKey.options = dt.proc_data[sn][dk].keys()
-            ddSubKey.value = ddSubKey.options[-1]
-            display(ddSubKey)
+        klist = list(dt.proc_data[sn][dk].keys())
+        ddSubKey.options = klist
+        if not sk in klist:
+            ddSubKey.value = klist[-1]
         else: 
+            txOutput.value += f"data key changed: {dk} \n"
             updatePlots(None)
             
     def onChangeSubKey(w):
+        if w['name']!='value':
+            return
         sn = ddSample.value
         dk = ddDataKey.value
         if not dk in dt.proc_data[sn].keys():
@@ -159,6 +169,7 @@ def display_data_scanning(dt):
         sk = ddSubKey.value
         if not sk in dt.proc_data[sn][dk].keys():
             return
+        txOutput.value += f"subkey changed {sk} \n"
         try:
             nn = len(dt.proc_data[sn][dk][sk])
             if nn>1:
