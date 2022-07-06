@@ -40,7 +40,7 @@ class h5xs_scan(h5xs_an):
             fn_raw = [fn_raw]
         
         for fnr in fn_raw:
-            sn = super().import_raw_data(fnr, save_attr=["source", "header", "scan"], 
+            sns = super().import_raw_data(fnr, save_attr=["source", "header", "scan"], 
                                          force_uniform_steps=force_uniform_steps, prec=prec, **kwargs)
             fast_axis = self.attrs[self.samples[0]]['scan']['fast_axis']['motor']
             try:
@@ -48,8 +48,9 @@ class h5xs_scan(h5xs_an):
                 exp = t
             except:
                 print(f"Unable to find meta data on exposure time, assuming {exp:.2f}s")
-            self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
-                         force_synch=force_synch, force_synch_trig=force_synch_trig)    
+            for sn in sns:
+                self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
+                             force_synch=force_synch, force_synch_trig=force_synch_trig)    
                                  
     def make_map_from_attr(self, sname="overall", attr_names="transmission", 
                            ref_int_map="int_saxs", correct_for_transsmission=True):

@@ -198,6 +198,7 @@ class h5xs_an(h5xs):
         super().__init__(*args, have_raw_data=False, **kwargs)
         self.proc_data = {}
         self.h5xs = {}
+        self.raw_data = {}
         
         self.enable_write(True)
         if "pre_proc" in self.fh5.attrs:
@@ -239,7 +240,9 @@ class h5xs_an(h5xs):
                 self.fh5[sn].attrs['source'] = fn_raw
                 self.enable_write(False)
             if load_raw_data:
-                self.h5xs[sn] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+                if not fn_raw in self.raw_data.keys():
+                    self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+                self.h5xs[sn] = self.raw_data[fn_raw]
             else: 
                 self.h5xs[sn] = fn_raw
             self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
@@ -272,36 +275,39 @@ class h5xs_an(h5xs):
         
         dt = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
         if sn is None:
-            sn = dt.samples[0]
-        elif not sn in dt.samples:
-            raise Exception(f"cannot find data on {sn} in {fn_raw}.")
+            sns = dt.samples
+        else: 
+            if not sn in dt.samples:
+                raise Exception(f"cannot find data on {sn} in {fn_raw}.")
+            sns = [sn]
         
-        self.h5xs[sn] = dt
-        self.enable_write(True)
-        if not sn in self.attrs.keys():
-            self.attrs[sn] = {}
-        if not sn in self.fh5.keys():
-            grp = self.fh5.create_group(sn)
-        else:
-            grp = self.fh5[sn]
-            
-        if "source" in save_attr:
-            self.attrs[sn]['source'] = os.path.realpath(fn_raw)
-            grp.attrs['source'] = self.attrs[sn]['source'] 
-        if "header" in save_attr:
-            self.attrs[sn]['header'] = dt.header(sn)
-            grp.attrs['header'] = json.dumps(self.attrs[sn]['header'])
-        if "scan" in save_attr:
-            self.attrs[sn]['scan'] = get_scan_parms(dt, sn, **kwargs)
-            grp.attrs['scan'] = json.dumps(self.attrs[sn]['scan'])
+        for sn in sns:
+            self.h5xs[sn] = dt
+            self.enable_write(True)
+            if not sn in self.attrs.keys():
+                self.attrs[sn] = {}
+            if not sn in self.fh5.keys():
+                grp = self.fh5.create_group(sn)
+            else:
+                grp = self.fh5[sn]
 
-        self.enable_write(False)
+            if "source" in save_attr:
+                self.attrs[sn]['source'] = os.path.realpath(fn_raw)
+                grp.attrs['source'] = self.attrs[sn]['source'] 
+            if "header" in save_attr:
+                self.attrs[sn]['header'] = dt.header(sn)
+                grp.attrs['header'] = json.dumps(self.attrs[sn]['header'])
+            if "scan" in save_attr:
+                self.attrs[sn]['scan'] = get_scan_parms(dt, sn, **kwargs)
+                grp.attrs['scan'] = json.dumps(self.attrs[sn]['scan'])
+
+            self.enable_write(False)
         
-        if not sn in self.proc_data.keys():
-            self.proc_data[sn] = {}
-        self.list_samples(quiet=True)
+            if not sn in self.proc_data.keys():
+                self.proc_data[sn] = {}
+            self.list_samples(quiet=True)
         
-        return sn
+        return sns
 
     def get_mon(self, sn, *args, **kwargs):
         if not sn in self.h5xs.keys():
@@ -344,7 +350,7 @@ class h5xs_an(h5xs):
         if self.pre_proc=="1D":
             self.process1d(N, max_c_size, debug)
         elif self.pre_proc=="2D":
-            if len(self.h5xs)>1: # one process per sample
+            if len(self.h5xs)>N/2: # one process per sample
                 self.process2d(N, max_c_size, debug)
             else: # single sample, split data 
                 self.process2d0(N, max_c_size, debug)
@@ -469,7 +475,7 @@ class h5xs_an(h5xs):
         jobs = []
         results = {}   # scanning data sets are too large, process one sample at a time
         for sn,dh5 in self.h5xs.items():
-            img_grps = [dh5.dset(dh5.det_name[det.extension], get_path=True) for det in detectors]
+            img_grps = [dh5.dset(dh5.det_name[det.extension], get_path=True, sn=sn) for det in detectors]
             
             job = pool.map_async(proc_merge2d, [(dh5.fn, img_grps, sn, debug, parms, bin_ranges)])  
             jobs.append(job)
@@ -542,7 +548,7 @@ class h5xs_an(h5xs):
                 print(f"processing {sn} ...")
             dh5 = self.h5xs[sn]
             s = dh5.dset(dh5.det_name[self.detectors[0].extension]).shape
-            img_grp = [dh5.dset(dh5.det_name[det.extension], get_path=True) for det in detectors]
+            img_grp = [dh5.dset(dh5.det_name[det.extension], get_path=True, sn=sn) for det in detectors]
             #dh5.fh5.close()
             
             if len(s)==3 or len(s)==4:
@@ -606,7 +612,7 @@ class h5xs_an(h5xs):
             self.add_proc_data(sn, 'qphi', 'merged', data)
 
     def export_data(self, fn):
-        """ export all data under "overall" is there are multiple samples
+        """ export all data under "overall" if there are multiple samples
         """
         if len(self.h5xs)==1:
             sn = self.samples[0]
