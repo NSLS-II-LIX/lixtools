@@ -745,8 +745,12 @@ class h5xs_an(h5xs):
             else:
                 grp.create_dataset(k, data=sd)
     
-    def load_data(self):
-        for sn in self.fh5.keys():
+    def load_data(self, samples=None):
+        if samples is None:
+            samples = self.fh5.keys()
+        elif isinstance(samples, str):
+            samples = [samples]
+        for sn in samples:
             if not sn in self.proc_data.keys():
                 print(f"loading data for {sn}")
                 self.proc_data[sn] = {}

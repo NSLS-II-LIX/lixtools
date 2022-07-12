@@ -38,7 +38,7 @@ def get_range(tx, alt_values, prec=2):
 def display_data_scanning(dt):
     """ the format of qrange and phirange should be v1~v2, v1~v2
     """
-    sn = dt.samples[0]
+    sn = list(dt.proc_data.keys())[0]
     dks = list(dt.proc_data[sn].keys())
     sks = list(dt.proc_data[sn][dks[0]].keys())
     ddSample = ipywidgets.Dropdown(options=list(dt.fh5.keys()), value=sn, description='Sample:')
