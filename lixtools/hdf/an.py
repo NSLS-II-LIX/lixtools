@@ -173,6 +173,12 @@ def proc_merge2d0(args):
     fh5.close()
     return [sn, starting_frame_cnt, ret]
 
+def update_res_path(res_path, replace_res_path={}):
+    for rp1,rp2 in replace_res_path.items():
+        print("updating resource path ...")
+        if rp1 in res_path:
+            res_path = res_path.replace(rp1, rp2)  
+    return res_path
 
 class h5xs_an(h5xs):
     """ keep the detector information
@@ -229,10 +235,7 @@ class h5xs_an(h5xs):
             self.attrs[sn] = {}
             fn_raw0 = self.fh5[sn].attrs['source']
             fn_raw_path = os.path.dirname(fn_raw0)
-            if fn_raw_path in replace_path.keys():
-                fn_raw = fn_raw0.replace(fn_raw_path, replace_path[fn_raw_path])
-            else:
-                fn_raw = fn_raw0
+            fn_raw = update_res_path(fn_raw0, replace_path)
             if not os.path.exists(fn_raw):
                 raise Exception(f"raw data file {fn_raw} does not exist ...")
             if fn_raw!=fn_raw0:
