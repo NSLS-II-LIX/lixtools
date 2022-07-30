@@ -53,7 +53,7 @@ class h5xs_scan(h5xs_an):
                              force_synch=force_synch, force_synch_trig=force_synch_trig)    
                                  
     def make_map_from_attr(self, sname="overall", attr_names="transmission", 
-                           ref_int_map="int_saxs", correct_for_transsmission=True):
+                           ref_int_map="int_saxs", correct_for_transsmission=True, recalc_trans_map=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
             proc_data[sname]["attrs"][attr_name]
             
@@ -86,6 +86,8 @@ class h5xs_scan(h5xs_an):
                 
         for an in attr_names:
             if an=="absorption":
+                continue   # this should be calculated from absorption map
+            if an=="transmission" and not recalc_trans_map:
                 continue   # this should be calculated from absorption map
             maps = []
             for sn in self.h5xs.keys():
@@ -127,7 +129,8 @@ class h5xs_scan(h5xs_an):
         if 'absorption' in attr_names:
             if not ref_int_map in self.proc_data['overall']['maps'].keys():
                 raise Exception(f"cannot find ref_int_map: {ref_int_map}")
-            h,b = np.histogram(self.proc_data[sname]['maps'][ref_int_map].d, bins=100)
+            d = self.proc_data[sname]['maps'][ref_int_map].d
+            h,b = np.histogram(d[~np.isnan(d)], bins=100)
             vbkg = (b[0]+b[1])/2
             mm = self.proc_data[sname]['maps']['transmission'].copy()
             t1 = np.average(mm.d[self.proc_data[sname]['maps'][ref_int_map].d<vbkg])
@@ -149,7 +152,6 @@ class h5xs_scan(h5xs_an):
         
         if isinstance(attr_names, str):
             attr_names = [attr_names]
-            
             
         if not "tomo" in self.proc_data[sn]:
             self.proc_data[sn]['tomo'] = {}
