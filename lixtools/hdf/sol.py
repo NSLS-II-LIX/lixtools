@@ -168,6 +168,8 @@ class h5sol_HT(h5xs):
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
                 self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
+            elif 'buffer' in list(self.fh5[sn].attrs):
+                del self.fh5[sn].attrs['buffer']
         self.enable_write(False)
 
     def change_buffer(self, sample_name, buffer_name):
@@ -207,10 +209,14 @@ class h5sol_HT(h5xs):
             print("h5 file is read-only ...")
             return
         for sn in self.samples:
+            self.enable_write(True)
+            self.fh5[sn].attrs['selected'] = self.attrs[sn]['selected']
             if sn in list(self.buffer_list.keys()):
-                self.enable_write(True)
                 self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
-                self.enable_write(False)
+                self.fh5[sn].attrs['sc_factor'] = self.attrs[sn]['sc_factor']
+            elif 'buffer' in list(self.fh5[sn].attrs):
+                del self.fh5[sn].attrs['buffer']
+            self.enable_write(False)                
             self.save_d1s(sn, debug=debug)
         
     def process(self, detectors=None, update_only=False,
