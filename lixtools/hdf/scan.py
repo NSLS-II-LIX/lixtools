@@ -119,12 +119,19 @@ class h5xs_scan(h5xs_an):
                     self.proc_data['overall']['maps'] = {}
                 self.proc_data['overall']['maps'][an] = mm
         
-        if correct_for_transsmission:
+        # this should correct for transmitted intensity rather than for transmission
+        # sometimes the beam can be off for part of the scan, that part of the data should not be corrected
+        trans = np.copy(self.proc_data[sname]['maps']["transmission"].d)
+        idx = (trans<np.average(trans)/4)
+        trans[idx] /= np.average(~idx)
+        trans[~idx] = 1
+        if correct_for_transsmission:  
             for an in attr_names:
                 if an in ["transmission", "absorption"]:
                     continue
                 print(f"transmmision correction: {sname}, {an}      \r", end="")
-                self.proc_data[sname]['maps'][an].d /= self.proc_data[sname]['maps']["transmission"].d
+                #self.proc_data[sname]['maps'][an].d /= self.proc_data[sname]['maps']["transmission"].d
+                self.proc_data[sname]['maps'][an].d /= trans
 
         if 'absorption' in attr_names:
             if not ref_int_map in self.proc_data['overall']['maps'].keys():

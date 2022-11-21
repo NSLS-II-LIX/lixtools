@@ -6,7 +6,7 @@ import fast_histogram as fh
 
 from py4xs.data2d import Data2d,MatrixWithCoords,unflip_array
 from py4xs.slnxs import Data1d
-from py4xs.hdf import lsh5,h5xs,proc_merge1d
+from py4xs.hdf import lsh5,h5xs,proc_merge1d,h5_file_access
 from py4xs.utils import get_bin_ranges_from_grid
 
 save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
@@ -44,7 +44,8 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     if len(motors)!=2:
         raise Exception(f"expecting two motors, got {motors}.")
     # slow axis is the first motor 
-    spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
+    #spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
+    spos = dh5xs.dset(motors[0], sn=sn, return_reference=False).flatten() 
     n = int(len(spos)/shape[0])
     if n>1:
         spos = spos[::n]         # in step scans, the slow axis position is reported every step
@@ -53,7 +54,8 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     spos = spos.round(dec)
     
     # for the fast axis, the Newport fly scan sometime repeats position data  
-    fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
+    #fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
+    fpos = dh5xs.dset(motors[1], sn=sn, return_reference=False).flatten()
     n = int(len(fpos)/shape[0]/shape[1])
     fpos = fpos[::n]         # remove redundancy, specific to fly scanning with Newport
     fpos = fpos[:shape[1]]   # assume these positions are repeating
@@ -267,6 +269,7 @@ class h5xs_an(h5xs):
     def show_data_qxy(self, sn, **kwargs):
         return self.h5xs[sn].show_data_qxy(sn=sn, detectors=self.detectors, **kwargs)
 
+    @h5_file_access
     def import_raw_data(self, fn_raw, sn=None, save_attr=["source", "header"], debug=False, **kwargs):
         """ create new group, copy header
             save_attr: meta data that should be extracted from the raw data file
@@ -364,6 +367,7 @@ class h5xs_an(h5xs):
             t2 = time.time()
             print("done, time elapsed: %.2f sec" % (t2-t1))                
 
+    @h5_file_access
     def process1d(self, N=8, max_c_size=1024, debug=True):
         qgrid = self.qgrid 
         detectors = self.detectors              
@@ -437,6 +441,7 @@ class h5xs_an(h5xs):
                 data.extend(results[sn][frn])
             self.add_proc_data(sn, 'azi_avg', 'merged', data)     
 
+    @h5_file_access
     def process2d(self, N=8, max_c_size=1024, debug=True):
         """ produce merged q-phi maps
             the bottleneck is reading the data
@@ -504,6 +509,7 @@ class h5xs_an(h5xs):
             self.add_proc_data(sn, 'qphi', 'merged', data)            
             
             
+    @h5_file_access
     def process2d0(self, N=8, max_c_size=1024, debug=True):
         """ produce merged q-phi maps
             for large files, the bottleneck is reading the data
@@ -540,7 +546,6 @@ class h5xs_an(h5xs):
         
         # for corrections: polarization and solid angle 
         #QPhiCorF = np.ones_like()
-
                 
         for sn in self.h5xs.keys():
             if N>1:
@@ -633,6 +638,7 @@ class h5xs_an(h5xs):
                 self.pack(sn, data_key, sub_key, fh5=fh5)
         fh5.close()
     
+    @h5_file_access
     def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None):
         print("saving processed data ...")
         if save_sns is None:
@@ -662,6 +668,7 @@ class h5xs_an(h5xs):
         self.enable_write(False)
         print("done.                      ")
     
+    @h5_file_access
     def pack(self, sn, data_key, sub_key, fh5=None):
         """ this is for packing processed data, which should be stored under self.proc_data as a dictionary
             sn="overall" is merged from all samples in the h5xs_an object
@@ -748,6 +755,7 @@ class h5xs_an(h5xs):
             else:
                 grp.create_dataset(k, data=sd)
     
+    @h5_file_access
     def load_data(self, samples=None):
         if samples is None:
             samples = self.fh5.keys()

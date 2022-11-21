@@ -1,4 +1,4 @@
-from py4xs.hdf import h5xs,lsh5
+from py4xs.hdf import h5xs,lsh5,h5_file_access
 from py4xs.slnxs import trans_mode,estimate_scaling_factor
 import numpy as np
 import pylab as plt
@@ -41,6 +41,7 @@ class h5sol_HPLC(h5xs):
         self.dbuf = None
         self.updating = False   # this is set to True when add_data() is active
         
+    @h5_file_access  
     def process_sample_name(self, sn, debug=False):
         #fh5 = h5py.File(self.fn, "r+")
         fh5 = self.fh5
@@ -50,7 +51,7 @@ class h5sol_HPLC(h5xs):
         elif sn not in self.samples:
             raise Exception(sn, "not in the sample list.")
         
-        return fh5,sn 
+        return sn 
         
     def load_d1s(self):
         super().load_d1s(self.samples[0])
@@ -98,7 +99,7 @@ class h5sol_HPLC(h5xs):
             poly_order: order of polynomial fit to each eigenvalue
             gaussian_filter width: sigma value for the filter, e.g. 1, or (0.5, 3)
         """
-        fh5,sn = self.process_sample_name(sn, debug=debug)
+        sn = self.process_sample_name(sn, debug=debug)
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
@@ -201,7 +202,7 @@ class h5sol_HPLC(h5xs):
                             this is useful when the beam is not on for the first few frames
         """
 
-        fh5,sn = self.process_sample_name(sn, debug=debug)
+        sn = self.process_sample_name(sn, debug=debug)
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
@@ -253,6 +254,7 @@ class h5sol_HPLC(h5xs):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
+    @h5_file_access  
     def get_chromatogram(self, sn, q_ranges=[[0.02,0.05]], flowrate=0, plot_merged=False,
                  calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True):
         """ returns data to be plotted in the chromatogram
@@ -270,13 +272,7 @@ class h5sol_HPLC(h5xs):
         nd = len(data)
         #qgrid = data[0].qgrid
         
-        ts = self.fh5[sn+'/primary/time'][...]  # self.fh5[sn+'/primary/time'].value
-        if len(ts)==1:
-            # there is only one time stamp for multi-frame data collection
-            cfg = json.loads(self.fh5[f'{sn}/primary'].attrs['configuration'])
-            k = list(cfg.keys())[0]
-            ts = np.arange(len(data)) * cfg[k]['data'][f"{k}_cam_acquire_period"]
-            
+        ts = self.get_ts(sn)             
         idx = [(self.qgrid>i_minq) & (self.qgrid<i_maxq) for [i_minq,i_maxq] in q_ranges]
         nq = len(idx)
         
@@ -339,7 +335,7 @@ class h5sol_HPLC(h5xs):
         ax1a = ax1.twiny()
         ax1b = ax1.twinx()
         
-        fh5,sn = self.process_sample_name(sn, debug=debug)
+        sn = self.process_sample_name(sn, debug=debug)
         if flowrate<0:  # get it from metadata
             md = self.md_dict(sn, md_keys=['HPLC'])
             if "HPLC" in md.keys():
@@ -455,7 +451,7 @@ class h5sol_HPLC(h5xs):
             the frames are specified by either first_frame and last_frame, or frame_range, e.g. "50-60"
             if path is used, be sure that it ends with '/'
         """
-        fh5,sn = self.process_sample_name(sn, debug=debug)
+        sn = self.process_sample_name(sn, debug=debug)
         
         if plot_data:
             if fig is None:
@@ -498,7 +494,7 @@ class h5sol_HPLC(h5xs):
                    debug=False):
         """ if path is used, be sure that it ends with '/'
         """
-        fh5,sn = self.process_sample_name(sn, debug=debug)
+        sn = self.process_sample_name(sn, debug=debug)
         if save_subtracted:
             if 'subtracted' not in self.d1s[sn].keys():
                 print("subtracted data not available.")

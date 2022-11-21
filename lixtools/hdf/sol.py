@@ -1,4 +1,4 @@
-from py4xs.hdf import h5xs,lsh5
+from py4xs.hdf import h5xs,lsh5,h5_file_access  
 from py4xs.slnxs import trans_mode,estimate_scaling_factor
 import numpy as np
 import pylab as plt
@@ -9,12 +9,17 @@ from scipy.interpolate import splrep,sproot,splev,UnivariateSpline
 class h5sol_ref(h5xs):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.check_scaling()
+
+    @h5_file_access  
+    def check_scaling(self):
         if "abs_scaling" in self.fh5.attrs:
             self.scaling = json.loads(self.fh5.attrs['abs_scaling'])
             print("Scaling information retrieved from reference data.")
         else:
             self.scaling = {}
         
+    @h5_file_access  
     def process(self, plot_data=True, timestamp=None, Iabs_w=1.632e-2, **kwargs):
         """ calculate the scaling factor sf needed
             to put Data1d.data on absolute scale: data*sf/trans_w
@@ -101,7 +106,9 @@ class h5sol_ref(h5xs):
             plt.ylim(0.1, 5)
             plt.show()
 
+        self.enable_write(True)
         self.fh5.attrs['abs_scaling'] = json.dumps(scaling_dict)
+        self.enable_write(False)
         self.scaling = scaling_dict
         
     def scaling_factor(self, cn=None):
@@ -132,6 +139,7 @@ class h5sol_HT(h5xs):
         """
         header = db[uid]
         
+    @h5_file_access  
     def load_d1s(self, sn=None):
         if sn==None:
             samples = self.samples
@@ -145,6 +153,7 @@ class h5sol_HT(h5xs):
             if 'buffer' in list(self.fh5[sn].attrs.keys()):
                 self.buffer_list[sn] = self.fh5[sn].attrs['buffer'].split()
         
+    @h5_file_access  
     def assign_buffer(self, buf_list, debug=False):
         """ buf_list should be a dict:
             {"sample_name": "buffer_name",
@@ -172,6 +181,7 @@ class h5sol_HT(h5xs):
                 del self.fh5[sn].attrs['buffer']
         self.enable_write(False)
 
+    @h5_file_access  
     def change_buffer(self, sample_name, buffer_name):
         """ buffer_name could be just a string (name) or a list of names 
             if sample_name is a list, all samples in the list will be assigned the same buffer
@@ -198,6 +208,7 @@ class h5sol_HT(h5xs):
             self.enable_write(False)
             self.subtract_buffer(sn)
                 
+    @h5_file_access  
     def update_h5(self, debug=False):
         """ raw data are updated using add_sample()
             save sample-buffer assignment

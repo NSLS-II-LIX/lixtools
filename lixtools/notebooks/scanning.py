@@ -41,7 +41,15 @@ def display_data_scanning(dt):
     sn = list(dt.proc_data.keys())[0]
     dks = list(dt.proc_data[sn].keys())
     sks = list(dt.proc_data[sn][dks[0]].keys())
-    ddSample = ipywidgets.Dropdown(options=list(dt.fh5.keys()), value=sn, description='Sample:')
+
+    if dt.fh5:
+        samples = list(dt.fh5.keys())
+    else:
+        fh5 = h5py.File(dt.fn, "r")
+        samples = list(dt.fh5.keys())
+        fh5.close()
+        
+    ddSample = ipywidgets.Dropdown(options=samples, value=sn, description='Sample:')
     ddDataKey = ipywidgets.Dropdown(options=dks, value=dks[0], description='Data Key:')
     ddSubKey = ipywidgets.Dropdown(options=sks, value=sks[0], description='Sub-Key:')
     hbox1 = ipywidgets.HBox([ddSample, ddDataKey, ddSubKey])

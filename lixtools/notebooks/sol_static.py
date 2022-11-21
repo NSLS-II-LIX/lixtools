@@ -19,14 +19,13 @@ def display_solHT_data(fn, atsas_path="", read_only=False):
     if not os.path.exists("processed/"):
         os.mkdir("processed")
     
-    if "run_type" not in dt.fh5['/'].attrs.keys():
-        dt.enable_write(True)
-        dt.fh5['/'].attrs['run_type'] = 'static'
-        dt.fh5['/'].attrs['instrument'] = 'LiX'
-        dt.fh5.flush()
-        dt.enable_write(False)
-    elif dt.fh5['/'].attrs['run_type']!='static':
-        raise Exception(f"this h5 has been assigned an incompatible run_type: {dt.fh5['/'].attrs['run_type']}")
+    with h5py.File(dt.fn, "r") as fh5:
+        if "run_type" not in fh5.attrs.keys():
+            fh5.attrs['run_type'] = 'static'
+            fh5.attrs['instrument'] = 'LiX'
+            fh5.flush()
+        elif fh5.attrs['run_type']!='static':
+            raise Exception(f"this h5 has been assigned an incompatible run_type: {fh5.attrs['run_type']}")
     
     # widgets
     ddSample = ipywidgets.Dropdown(options=dt.samples, 

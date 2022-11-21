@@ -58,8 +58,9 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         d1fb = updateAvgPlot(None)
         sn1 = ddSample.value
         sn2 = ddBlank.value
-        dt1.fh5[f'{sn1}/processed'].attrs['selected'] = dt1.attrs[sn1]['selected']
-        dt1.fh5.flush()
+        dt1.save_d1s(sn=sn1)
+        #dt1.fh5[f'{sn1}/processed'].attrs['selected'] = dt1.attrs[sn1]['selected']
+        #dt1.fh5.flush()
         #dt2.fh5[f'{sn2}/processed'].attrs['selected'] = dt2.attrs[sn2]['selected']
         #dt2.fh5.flush()
         if sn1 in d1list.keys():

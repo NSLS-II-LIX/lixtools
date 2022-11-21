@@ -66,14 +66,13 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
     dt.set_trans(transMode, trigger="sol", dt0=0.05)  # in case external trans values are needed
     dt.normalize_int()
 
-    if "run_type" not in dt.fh5['/'].attrs.keys():
-        dt.enable_write(True)
-        dt.fh5['/'].attrs['run_type'] = 'SEC'
-        dt.fh5['/'].attrs['instrument'] = "LiX"
-        dt.fh5.flush()
-        dt.enable_write(False)
-    elif dt.fh5['/'].attrs['run_type']!='SEC':
-        raise Exception(f"this h5 has been assigned an incompatible run_type: {dt.fh5['/'].attrs['run_type']}")          
+    with h5py.File(dt.fn) as fh5:
+        if "run_type" not in fh5.attrs.keys():
+            fh5.attrs['run_type'] = 'SEC'
+            fh5.attrs['instrument'] = "LiX"
+            fh5.flush()
+        elif fh5.attrs['run_type']!='SEC':
+            raise Exception(f"this h5 has been assigned an incompatible run_type: {fh5.attrs['run_type']}")          
               
     # vbox1 1D chromotograms
     vb1Lb = ipywidgets.Label(value="chromatograms:")
