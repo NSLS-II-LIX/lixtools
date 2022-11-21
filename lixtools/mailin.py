@@ -487,7 +487,7 @@ def generate_docs2(ot2_layout, xls_fns,
     protocol = ["metadata = {'protocolName': 'sample transfer',\n",
                 "            'author': 'LiX',\n",
                 "            'description': 'auto-generated',\n",
-                "            'apiLevel': '2.3'\n",
+                "            'apiLevel': '2.9'\n",
                 "           }\n", 
                 "\n",
                 "def run(ctx):\n",]
