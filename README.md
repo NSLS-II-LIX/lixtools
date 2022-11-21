@@ -42,3 +42,5 @@ update after implementing functions for h5xs_scan
 2022Apr:
 reorganized notebooks
 
+2022Nov:
+open h5 file only when necessary
