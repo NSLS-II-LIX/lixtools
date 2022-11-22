@@ -272,7 +272,8 @@ class h5sol_HPLC(h5xs):
         nd = len(data)
         #qgrid = data[0].qgrid
         
-        ts = self.get_ts(sn)             
+        exp_t = self.header(sn)['pilatus']['exposure_time']
+        ts = self.get_ts(sn, exp_t)
         idx = [(self.qgrid>i_minq) & (self.qgrid<i_maxq) for [i_minq,i_maxq] in q_ranges]
         nq = len(idx)
         

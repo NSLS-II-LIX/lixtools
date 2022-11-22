@@ -143,7 +143,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
             return
 
         fig2.clear()
-        ax = fig2.add_axes()
+        ax = fig2.add_axes([0.1, 0.1, 0.8, 0.8])
         #ax.clear()
         d1s = d1list[ddSampleS.value]
         if ddSolventS.value in [None, 'None', d1list[ddSampleS.value]]:
