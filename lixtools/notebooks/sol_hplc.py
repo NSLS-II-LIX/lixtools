@@ -1,7 +1,7 @@
 import ipywidgets
 from IPython.display import display,clear_output
 import numpy as np
-import json,os
+import json,os,py4xs
 from py4xs.slnxs import trans_mode
 from py4xs.slnxs import get_font_size
 from py4xs.hdf import h5xs,lsh5,create_linked_files
