@@ -341,11 +341,13 @@ class h5xs_an(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
-    def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, **kwargs):
+    def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, check_size=0, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
             and source of the data (data_key/sub_key)
         """
         data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
+        if check_size>0:
+            data = np.pad(data, (0,check_size-len(data)), constant_values=np.nan)
         self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
         
     def process(self, N=8, max_c_size=1024, debug=True):
@@ -382,7 +384,7 @@ class h5xs_an(h5xs):
                 print(f"processing {sn} ...")
             dh5 = self.h5xs[sn]
 
-            s = dh5.dset(dh5.det_name[self.detectors[0].extension]).shape
+            s = dh5.dshape(dh5.det_name[self.detectors[0].extension])
             if len(s)==3 or len(s)==4:
                 n_total_frames = s[-3]  # fast axis
             else:
@@ -410,6 +412,7 @@ class h5xs_an(h5xs):
                 else:
                     nframes = c_size
                 
+                dh5.explict_open_h5()
                 for idx, x in np.ndenumerate(t):  # idx should enumerate the outter-most indices
                     images = {det.extension:
                               dh5.dset(dh5.det_name[det.extension])[idx][i*c_size:i*c_size+nframes] for det in detectors}
@@ -422,7 +425,8 @@ class h5xs_an(h5xs):
                                                         debug, detectors, self.qgrid))
                         results[sn][fr1] = data
                     fcnt += nframes
-                    
+                dh5.explict_close_h5()
+                
         if N>1:             
             for job in jobs:
                 [sn, fr1, data] = job.get()[0]
@@ -555,7 +559,7 @@ class h5xs_an(h5xs):
             if debug:
                 print(f"processing {sn} ...")
             dh5 = self.h5xs[sn]
-            s = dh5.dset(dh5.det_name[self.detectors[0].extension]).shape
+            s = dh5.dshape(dh5.det_name[self.detectors[0].extension])
             img_grp = [dh5.dset(dh5.det_name[det.extension], get_path=True, sn=sn) for det in detectors]
             #dh5.fh5.close()
             

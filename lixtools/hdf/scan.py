@@ -90,11 +90,13 @@ class h5xs_scan(h5xs_an):
             if an=="transmission" and not recalc_trans_map:
                 continue   # this should be calculated from absorption map
             maps = []
+            
             for sn in self.h5xs.keys():
                 if not 'scan' in self.attrs[sn].keys():
                     get_scan_parms(self.h5xs[sn], sn)
                 if an not in self.proc_data[sn]['attrs'].keys():
                     raise Exception(f"attribue {an} cannot be found for {sn}.")
+                
                 data = self.proc_data[sn]['attrs'][an].reshape(self.attrs[sn]['scan']['shape'])
                 m = MatrixWithCoords()
                 m.d = np.copy(data)
