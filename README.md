@@ -40,7 +40,8 @@ first version of h5xs_scan
 update after implementing functions for h5xs_scan
 
 2022Apr:
-reorganized notebooks
+reorganize notebooks
 
 2022Nov:
-open h5 file only when necessary
+open h5 file only when necessary; deal with fewer than expected number of frames in scattering data
+best solution is to fix the size of the dataset (.resize(xx, axis=0)) before processing 

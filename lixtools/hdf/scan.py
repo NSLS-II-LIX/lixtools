@@ -51,6 +51,18 @@ class h5xs_scan(h5xs_an):
             for sn in sns:
                 self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
                              force_synch=force_synch, force_synch_trig=force_synch_trig)    
+                
+    def get_attr_from_map(self, sn, map_name):
+        """ it is sometimes necessary to translate a 2D map into a 1D array, so that the index of the array
+            can match the index of the 2D scattering data
+        """
+        m = np.copy(self.proc_data[sn]['maps'][map_name].d)
+        if self.attrs[sn]['scan']['snaking']:
+            print(f"re-snaking {sn}, {map_name}      \r", end="")
+            for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
+                m.d[i] = np.flip(m.d[i])
+                
+        return m.flatten()
                                  
     def make_map_from_attr(self, sname="overall", attr_names="transmission", 
                            ref_int_map="int_saxs", correct_for_transsmission=True, recalc_trans_map=True):
@@ -71,7 +83,7 @@ class h5xs_scan(h5xs_an):
         elif sname in self.samples:
             samples = [sname]
         else:
-            raise exception(f"sample {sname} does not exist") 
+            raise Exception(f"sample {sname} does not exist") 
         
         if isinstance(attr_names, str):
             attr_names = [attr_names]

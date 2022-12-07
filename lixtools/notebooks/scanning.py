@@ -118,11 +118,18 @@ def display_data_scanning(dt):
                 ax2.set_yscale('log')
                 ax2.set_xscale('log')
                 ax3.set_yscale('log')
-            ax3.set_ylim(bottom=0)
+            else:
+                ax3.set_ylim(bottom=0)
         else:
             if dk=="attrs":  # 1D array
                 ax1 = fig.add_axes([0.1, 0.5, 0.5, 0.4])
                 ax1.plot(dt.proc_data[sn][dk][sk])
+            elif dk=="Iq": 
+                ax1 = fig.add_axes([0.1, 0.5, 0.5, 0.4])
+                d1 = dt.proc_data[sn][dk][sk]
+                ax1.plot(d1.qgrid, d1.data)
+                if logCbox.value:
+                    ax1.set_yscale('log')
             elif dk in ["maps","tomo"]:  # MatrixWithCoords
                 ax1 = fig.add_axes([0.1, 0.1, 0.5, 0.8])
                 dt.proc_data[sn][dk][sk].plot(ax=ax1, logScale=logCbox.value)
