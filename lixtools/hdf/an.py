@@ -208,50 +208,54 @@ class h5xs_an(h5xs):
         self.h5xs = {}
         self.raw_data = {}
         
-        self.enable_write(True)
-        if "pre_proc" in self.fh5.attrs:
-            pre_proc0 = self.fh5.attrs["pre_proc"]
-            if pre_proc0!=pre_proc:
-                print(f"Warning: using existing pre_proc type {pre_proc0} instead of {pre_proc}")
-                pre_proc = pre_proc0
-        else:
-            self.fh5.attrs["pre_proc"] = pre_proc    
-        self.pre_proc = pre_proc
-        if pre_proc=="2D":
-            if "Nphi" in self.fh5.attrs:
-                Nphi0 = int(self.fh5.attrs['Nphi'])
-                if Nphi0!=Nphi:
-                    print(f"Warning: using existing Nphi={Nphi0} instead of {Nphi}")
+        with h5py.File(fn) as self.fh5:            
+            if "pre_proc" in self.fh5.attrs:
+                pre_proc0 = self.fh5.attrs["pre_proc"]
+                if pre_proc0!=pre_proc:
+                    print(f"Warning: using existing pre_proc type {pre_proc0} instead of {pre_proc}")
+                    pre_proc = pre_proc0
             else:
-                self.fh5.attrs['Nphi'] = Nphi
-            self.Nphi = Nphi
-            self.phigrid = np.linspace(-180, 180, self.Nphi)
-        self.enable_write(False)
-        
-        # if there are raw data file info, prepare the read only h5xs objects in case needed
-        self.samples = list(self.fh5.keys())
-        if 'overall' in self.samples:
-            self.samples.remove('overall')
-            self.attrs['overall'] = {}
-        for sn in self.samples:
-            self.attrs[sn] = {}
-            fn_raw0 = self.fh5[sn].attrs['source']
-            fn_raw_path = os.path.dirname(fn_raw0)
-            fn_raw = update_res_path(fn_raw0, replace_path)
-            if not os.path.exists(fn_raw):
-                raise Exception(f"raw data file {fn_raw} does not exist ...")
-            if fn_raw!=fn_raw0:
                 self.enable_write(True)
-                self.fh5[sn].attrs['source'] = fn_raw
+                self.fh5.attrs["pre_proc"] = pre_proc
                 self.enable_write(False)
-            if load_raw_data:
-                if not fn_raw in self.raw_data.keys():
-                    self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
-                self.h5xs[sn] = self.raw_data[fn_raw]
-            else: 
-                self.h5xs[sn] = fn_raw
-            self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
+            self.pre_proc = pre_proc
+            if pre_proc=="2D":
+                if "Nphi" in self.fh5.attrs:
+                    Nphi0 = int(self.fh5.attrs['Nphi'])
+                    if Nphi0!=Nphi:
+                        print(f"Warning: using existing Nphi={Nphi0} instead of {Nphi}")
+                else:
+                    self.enable_write(True)
+                    self.fh5.attrs['Nphi'] =  Nphi
+                    self.enable_write(False)
+                self.Nphi = Nphi
+                self.phigrid = np.linspace(-180, 180, self.Nphi)
+        
+            # if there are raw data file info, prepare the read only h5xs objects in case needed
+            self.samples = list(self.fh5.keys())
+            if 'overall' in self.samples:
+                self.samples.remove('overall')
+                self.attrs['overall'] = {}
+            for sn in self.samples:
+                self.attrs[sn] = {}
+                fn_raw0 = self.fh5[sn].attrs['source']
+                fn_raw_path = os.path.dirname(fn_raw0)
+                fn_raw = update_res_path(fn_raw0, replace_path)
+                if not os.path.exists(fn_raw):
+                    raise Exception(f"raw data file {fn_raw} does not exist ...")
+                if fn_raw!=fn_raw0:
+                    self.enable_write(True)
+                    self.fh5[sn]['source'] = fn_raw
+                    self.enable_write(False)
+                if load_raw_data:
+                    if not fn_raw in self.raw_data.keys():
+                        self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+                    self.h5xs[sn] = self.raw_data[fn_raw]
+                else: 
+                    self.h5xs[sn] = fn_raw
+                self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
 
+                
     def list_data(self):
         for sn,d in self.proc_data.items(): 
             print(sn)
@@ -760,14 +764,15 @@ class h5xs_an(h5xs):
                 grp.create_dataset(k, data=sd)
     
     @h5_file_access
-    def load_data(self, samples=None):
+    def load_data(self, samples=None, quiet=False):
         if samples is None:
             samples = self.fh5.keys()
         elif isinstance(samples, str):
             samples = [samples]
         for sn in samples:
             if not sn in self.proc_data.keys():
-                print(f"loading data for {sn}")
+                if not quiet:
+                    print(f"loading data for {sn}")
                 self.proc_data[sn] = {}
             for data_key in self.fh5[sn].keys():
                 dtype = self.fh5[sn][data_key].attrs['type']
@@ -801,7 +806,8 @@ class h5xs_an(h5xs):
                                 for i in range(n):
                                     data[i].__dict__[f] = h5data[f][i]
                         self.proc_data[sn][data_key][sub_key] = data
-        print("done.                                           ")
+        if not quiet:
+            print("done.                                           ")
     
     def qphi_bkgsub(self, bsn, bfrns):
         """ background subtraction, using the specified sample name and frame numbers 

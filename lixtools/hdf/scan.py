@@ -2,7 +2,7 @@ from py4xs.data2d import Data2d,MatrixWithCoords
 from py4xs.slnxs import Data1d
 from py4xs.hdf import lsh5,h5xs
 from py4xs.utils import run
-import lixtools
+import lixtools,h5py
 import numpy as np
 import multiprocessing as mp
 import json,os,copy,tempfile,re
@@ -12,10 +12,17 @@ from .an import h5xs_an
 
 def calc_tomo(args):
     an,mm,kwargs = args
+    
+    # filter out incomplete data
+    idx = ~np.isnan(mm.d.sum(axis=1))
+    dmap = mm.d[idx, :]
+    yc = mm.yc[idx]
+    xc = mm.xc
+    
     algorithm = kwargs.pop("algorithm")
-    proj = mm.d.reshape((len(mm.yc),1,len(mm.xc)))
-    rot_center = tomopy.find_center(proj, np.radians(mm.yc))
-    recon = tomopy.recon(proj, np.radians(mm.yc), center=rot_center, algorithm=algorithm, sinogram_order=False, **kwargs)
+    proj = dmap.reshape((len(yc),1,len(xc)))
+    rot_center = tomopy.find_center(proj, np.radians(yc))
+    recon = tomopy.recon(proj, np.radians(yc), center=rot_center, algorithm=algorithm, sinogram_order=False, **kwargs)
     #recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
     
     return [an,recon[0,:,:]]
@@ -30,7 +37,7 @@ class h5xs_scan(h5xs_an):
         super().__init__(*args, **kwargs)
 
         for sn in self.samples:
-            self.attrs[sn]['scan'] = json.loads(self.fh5[sn].attrs['scan'])
+            self.attrs[sn]['scan'] = json.loads(self.get_h5_attr(sn, 'scan'))
             
     def import_raw_data(self, fn_raw, sn=None, force_uniform_steps=True, prec=0.001, exp=1,
                         force_synch='auto', force_synch_trig=0, **kwargs):

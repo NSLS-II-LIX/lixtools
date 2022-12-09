@@ -1,7 +1,7 @@
 import ipywidgets
 from IPython.display import display,clear_output
 import numpy as np
-import json,os
+import json,os,h5py
 from py4xs.data2d import Data2d,unflip_array,flip_array
 from py4xs.hdf import lsh5
 from py4xs.plot import show_data
@@ -46,7 +46,7 @@ def display_data_scanning(dt):
         samples = list(dt.fh5.keys())
     else:
         fh5 = h5py.File(dt.fn, "r")
-        samples = list(dt.fh5.keys())
+        samples = list(fh5.keys())
         fh5.close()
         
     ddSample = ipywidgets.Dropdown(options=samples, value=sn, description='Sample:')
