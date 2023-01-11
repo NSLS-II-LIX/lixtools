@@ -2,6 +2,7 @@ import ipywidgets
 from IPython.display import display,clear_output
 import numpy as np
 import json,os,h5py
+from py4xs.slnxs import Data1d
 from py4xs.data2d import Data2d,unflip_array,flip_array
 from py4xs.hdf import lsh5
 from py4xs.plot import show_data
@@ -127,9 +128,13 @@ def display_data_scanning(dt):
             elif dk=="Iq": 
                 ax1 = fig.add_axes([0.1, 0.5, 0.5, 0.4])
                 d1 = dt.proc_data[sn][dk][sk]
-                ax1.plot(d1.qgrid, d1.data)
-                if logCbox.value:
-                    ax1.set_yscale('log')
+                if isinstance(d1, Data1d):
+                    ax1.plot(d1.qgrid, d1.data)
+                    if logCbox.value:
+                        ax1.set_yscale('log')
+                elif isinstance(d1, np.ndarray):
+                    if len(d1.shape)==2:
+                        ax1.imshow(d1, aspect="auto")
             elif dk in ["maps","tomo"]:  # MatrixWithCoords
                 ax1 = fig.add_axes([0.1, 0.1, 0.5, 0.8])
                 dt.proc_data[sn][dk][sk].plot(ax=ax1, logScale=logCbox.value)

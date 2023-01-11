@@ -764,7 +764,7 @@ class h5xs_an(h5xs):
                 grp.create_dataset(k, data=sd)
     
     @h5_file_access
-    def load_data(self, samples=None, quiet=False):
+    def load_data(self, samples=None, read_data_keys=None, read_sub_keys=None, quiet=False):
         if samples is None:
             samples = self.fh5.keys()
         elif isinstance(samples, str):
@@ -774,7 +774,11 @@ class h5xs_an(h5xs):
                 if not quiet:
                     print(f"loading data for {sn}")
                 self.proc_data[sn] = {}
-            for data_key in self.fh5[sn].keys():
+            if read_data_keys is None:
+                dks = list(self.fh5[sn].keys())
+            else:
+                dks = list(set(read_data_keys) & set(self.fh5[sn].keys()))
+            for data_key in dks:
                 dtype = self.fh5[sn][data_key].attrs['type']
                 if not data_key in self.proc_data[sn].keys():
                     self.proc_data[sn][data_key] = {}
@@ -784,7 +788,12 @@ class h5xs_an(h5xs):
                     d0 = MatrixWithCoords()
                 for field in save_fields[dtype]['shared']:
                     d0.__dict__[field] = self.fh5[sn][data_key].attrs[field]
-                for sub_key in self.fh5[sn][data_key].keys():
+
+                if read_sub_keys is None:
+                    sks = list(self.fh5[sn][data_key].keys())
+                else:
+                    sks = list(set(read_sub_keys) & set(self.fh5[sn][data_key].keys()))
+                for sub_key in sks:
                     print(f"{data_key} ({dtype}): {sub_key}                \r", end="")
                     h5data = self.fh5[sn][data_key][sub_key]
                     if dtype=="ndarray":

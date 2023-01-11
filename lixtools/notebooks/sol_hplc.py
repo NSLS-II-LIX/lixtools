@@ -244,13 +244,13 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
         q_ranges = []
         for roiTx in[xROI1Tx, xROI2Tx, xROI3Tx]:
             try:
-                q_ranges.append(np.asarray(roiTx.value.split(","), dtype=np.float))
+                q_ranges.append(np.asarray(roiTx.value.split(","), dtype=float))
             except:
                 pass
             
         dt.plot_data(plot_merged=(not x2dMapSubtractedCB.value), 
                      q_ranges=q_ranges, logROI=xROIlogCB.value,
-                     clim=[np.float(cminTx.value), np.float(cmaxTx.value)], 
+                     clim=[float(cminTx.value), float(cmaxTx.value)], 
                      logScale=x2dMaplogCB.value,
                      show_hplc_data=[showLC1CB.value, showLC2CB.value], 
                      ax1=ax1a, ax2=ax1b)

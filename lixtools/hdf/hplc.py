@@ -105,7 +105,7 @@ class h5sol_HPLC(h5xs):
             t1 = time.time()
 
         if isinstance(poly_order, int):
-            poly_order = poly_order*np.ones(Nc, dtype=np.int)
+            poly_order = poly_order*np.ones(Nc, dtype=int)
         elif isinstance(poly_order, list):
             if len(poly_order)!=Nc:
                 raise Exception(f"the length of poly_order ({poly_order}) must match Nc ({Nc}).")
@@ -113,7 +113,7 @@ class h5sol_HPLC(h5xs):
             raise Exception(f"invalid poly_order: {poly_order}")
 
         if isinstance(smoothing_factor, float) or isinstance(smoothing_factor, int):
-            smoothing_factor = smoothing_factor*np.ones(Nc, dtype=np.float)
+            smoothing_factor = smoothing_factor*np.ones(Nc, dtype=float)
         elif isinstance(poly_order, list):
             if len(smoothing_factor)!=Nc:
                 raise Exception(f"the length of smoothing_factor ({smoothing_factor}) must match Nc ({Nc}).")
