@@ -6,6 +6,9 @@ from pyzbar.pyzbar import decode,ZBarSymbol
 import numpy as np
 from itertools import product
 
+cam_host_ip = '169.254.246.60'
+cam_sock_port = 9999
+
 def look_for_device(cam_name):
     ret = subprocess.run(["v4l2-ctl", "--list-devices"], stdout=subprocess.PIPE)
     for _ in ret.stdout.decode().split('\n\n'):
@@ -170,15 +173,13 @@ def read_code(img, target="3QR", crop_x=1, crop_y=1, debug=True, fn="cur.png"):
 
 def run():
     
-    opentron_sock_port = 9999
-
     cam = webcam(cam_name="Logitech Webcam C930e")
     cam.start_camera_feed("YUYV", 1280, 720)
     cam.set_zoom(350)
     cam.set_focus(50)
     
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serversocket.bind(('10.16.0.10', opentron_sock_port))
+    serversocket.bind((cam_host_ip, cam_sock_port))
     serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     serversocket.listen(5)
     print('listening ...')

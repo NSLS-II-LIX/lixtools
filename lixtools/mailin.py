@@ -278,18 +278,19 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
 
     return slist,transfer_list,bdict,mixing_list
 
-def read_OT2_layout(plate_slots, holder_slots, msg=None):
+def read_OT2_layout(plate_slots, holder_slots, msg=None, ot2_ip="169.254.246.65", ot2_port=22):
     """ 
     the arguments should be a comma-separated list of slot positions on the Opentron deck
     e.g. "1,2"  
+    revise IP and port when using ssh tunnel to connect to OT2
     """
     if msg is None:
         ssh_key = str(pathlib.Path.home())+"/.ssh/ot2_ssh_key"
         if not os.path.isfile(ssh_key):
             raise Exception(f"{ssh_key} does not exist!")
 
-        cmd = ["ssh", "-i", ssh_key, "-o", "port=9999",
-               "root@localhost", "/var/lib/jupyter/notebooks/check_deck_config.py", 
+        cmd = ["ssh", "-i", ssh_key, "-o", f"port={ot2_port}",
+               f"root@{ot2_ip}", "/var/lib/jupyter/notebooks/check_deck_config.py", 
                "-h", holder_slots, "-p", plate_slots]
 
         ret = subprocess.run(cmd, capture_output=True)
