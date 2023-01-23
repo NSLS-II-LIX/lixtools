@@ -92,7 +92,7 @@ def main(argv):
     ldict = {"plates": pdict, "holders": hdict}
     tips = []
 
-    sc = sock_client(('192.168.7.2', code_reader_sock_port))   # BeagleBone
+    sc = sock_client(('169.254.246.60', code_reader_sock_port))   # host IP for the eth over USB connection
     
     robot.connect()
     robot.turn_on_rail_lights()
