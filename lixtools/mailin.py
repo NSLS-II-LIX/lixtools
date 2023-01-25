@@ -304,11 +304,12 @@ class sock_client:
         while True:
             try:
                 self.sock.connect(self.sock_addr)   
+                print("connected.")
                 break
             except ConnectionRefusedError:
                 if timeout>0 and time.time()-ts>timeout:
                     raise f"unable to connect after {timeout} sec." 
-                time.sleep(3)
+                time.sleep(1)
                 print(f"{time.asctime()}: waiting for a connection ...   \r", end="")
         
     def send_msg(self, msg):
@@ -336,12 +337,13 @@ def read_code(cam, target, slot):
     
     ret = cam.process_cmd(cmd)
     print(ret)
-    return ret
+    return json.loads(ret)
 
 
 def read_OT2_layout2(plate_slots, holder_slots, retry=3,
                      camserv_ip="169.254.246.60", camserv_port=9999,
-                     ot2_ip="169.254.246.65", ot2_port=9999, timeout=60):
+                     ot2_ssh_ip = "169.254.246.65", ot2_ssh_port=22,
+                     ot2_cmd_ip="169.254.246.65", ot2_cmd_port=9999, timeout=60):
     """ this runs check_deck_config2.py to move the gantry
         but needs to communicate to the camserv separately to read the code
     """
@@ -349,9 +351,9 @@ def read_OT2_layout2(plate_slots, holder_slots, retry=3,
     if not os.path.isfile(ssh_key):
         raise Exception(f"{ssh_key} does not exist!")
 
-    print("running script on OT2 ...")
-    cmd = ["ssh", "-i", ssh_key, "-o", f"port={ot2_port}",
-           f"root@{ot2_ip}", "/var/lib/jupyter/notebooks/check_deck_config2.py"]
+    print("starting script on OT2 ...")
+    cmd = ["ssh", "-i", ssh_key, "-o", f"port={ot2_ssh_port}",
+           f"root@{ot2_ssh_ip}", "/var/lib/jupyter/notebooks/check_deck_config2.py"]
     #proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     th = threading.Thread(target=subprocess.run, args=(cmd,))
     th.start()
@@ -363,34 +365,37 @@ def read_OT2_layout2(plate_slots, holder_slots, retry=3,
     cam.set_zoom(350)
     cam.set_focus(50)
 
-    print("connect to OT2 ...")
+    print("connecting to OT2 ...")
     # OT2 socket, won't be ready until the gantry is homed
-    ot2_sock = sock_client((ot2_ip, ot2_port))
+    ot2_sock = sock_client((ot2_cmd_ip, ot2_cmd_port))
 
     pdict = OrderedDict()
     hdict = OrderedDict()
     ldict = {"plates": pdict, "holders": hdict}
 
-    for ps in plate_slots:
+    for ps in plate_slots.split(','):
         ot2_sock.send_msg(f"{ps},plate")
+        ps = int(ps)
         for _ in range(retry): 
             ret = read_code(cam, "1QR", ps)
             if len(ret)==1:
-                pdict[ret[0]] = {"slot": pos}
-                print(pos, ret[0])
+                pdict[ret[0]] = {"slot": ps}
+                print(ps, ret[0])
                 break
 
-    for ps in holder_slots:
+    for ps in holder_slots.split(','):
         ot2_sock.send_msg(f"{ps},holder")
+        ps = int(ps)
         for _ in range(retry): 
             ret = read_code(cam, "3QR", ps)
             if len(ret.keys())==3:
                 break
-        for hidx in ['A', 'B', 'C']:
+        for hidx in ['a', 'b', 'c']:
             if hidx in ret.keys():
-                hdict[ret[hidx]] = {"slot": pos, "holder": hidx}
-        print(pos, ret)        
-        
+                hdict[ret[hidx]] = {"slot": ps, "holder": hidx}
+        print(ps, ret)        
+    
+    ot2_sock.send_msg("done")
     ot2_sock.clean_up()
     th.join()
 
