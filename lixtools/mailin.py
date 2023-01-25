@@ -364,6 +364,8 @@ def read_OT2_layout2(plate_slots, holder_slots, retry=3,
     cam.start_camera_feed("YUYV", 1280, 720)
     cam.set_zoom(350)
     cam.set_focus(50)
+    if not os.path.exists('img'):
+        os.makedirs('img')
 
     print("connecting to OT2 ...")
     # OT2 socket, won't be ready until the gantry is homed
