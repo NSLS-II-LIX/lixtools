@@ -6,10 +6,13 @@ from os.path import dirname
 from barcode import generate,writer
 import PIL,openpyxl,subprocess,json
 import pylab as plt
-import glob,uuid,re,pathlib,os
+import glob,uuid,re,pathlib,os,socket,time
 import ipywidgets
 from IPython.display import display,clear_output
 import webbrowser,qrcode,base64
+from collections import Counter,OrderedDict
+
+from lixtools.inst.webcam import webcam
 
 USE_SHORT_QR_CODE=False
 
@@ -277,6 +280,117 @@ def process_sample_lists(xls_fns, process_all_tabs=False, b_lim=4):
             slist.append([hname, hpos, wdict[wn]["Sample"], wdict[wn]["Buffer"], vt])
 
     return slist,transfer_list,bdict,mixing_list
+    
+
+class sock_client:
+    def __init__(self, sock_addr, persistent=True):
+        self.sock_addr = sock_addr
+        self.delay = 0.05
+        self.sock = None
+        self.persistent = persistent
+
+        if persistent:
+            self.connect()
+    
+    def clean_up(self):
+        if self.sock is not None:
+            self.sock.close()
+
+    def connect(self, timeout=-1):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        ts = time.time()
+        while True:
+            try:
+                self.sock.connect(self.sock_addr)   
+                break
+            except ConnectionRefusedError:
+                if timeout>0 and time.time()-ts>timeout:
+                    raise f"unable to connect after {timeout} sec." 
+                time.sleep(3)
+                print(f"{time.asctime()}: waiting for a connection ...   \r", end="")
+        
+    def send_msg(self, msg):
+        if not self.persistent:
+            self.sock.connect(self.sock_addr)
+        self.sock.send(msg.encode())
+        time.sleep(self.delay)
+        ret = self.sock.recv(8192).decode('ascii')
+        if not self.persistent:
+            self.sock.close()
+        return ret
+
+
+def read_code(cam, target, slot):
+    if target=="1bar":
+        cmd = {"target": "1bar", "zoom": 200, "focus": 45, "slot": slot}
+    elif target=="1QR":
+        cmd = {"target": "1QR", "zoom": 200, "focus": 45, 
+               "crop_x": 0.3, "crop_y": 0.6, "slot": slot, "exposure": 30} 
+    elif target=="3QR":
+        cmd = {"target": "3QR", "zoom": 300, "focus": 55, 
+               "crop_y": 0.6, "exposure": 25, "slot": slot}
+    else:
+        return []
+    
+    ret = cam.process_cmd(cmd)
+    print(ret)
+    return ret
+
+
+def read_OT2_layout2(plate_slots, holder_slots, retry=3,
+                     camserv_ip="169.254.246.60", camserv_port=9999,
+                     ot2_ip="169.254.246.65", ot2_port=9999, timeout=60):
+    """ this runs check_deck_config2.py to move the gantry
+        but needs to communicate to the camserv separately to read the code
+    """
+    ssh_key = str(pathlib.Path.home())+"/.ssh/ot2_ssh_key"
+    if not os.path.isfile(ssh_key):
+        raise Exception(f"{ssh_key} does not exist!")
+
+    print("running script on OT2 ...")
+    cmd = ["ssh", "-i", ssh_key, "-o", f"port={ot2_port}",
+           f"root@{ot2_ip}", "/var/lib/jupyter/notebooks/check_deck_config2.py"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    print("connect to webcam ...")
+    # establish connection to the camserv
+    cam = webcam(cam_name="Logitech Webcam C930e")
+    cam.start_camera_feed("YUYV", 1280, 720)
+    cam.set_zoom(350)
+    cam.set_focus(50)
+
+    print("connect to OT2 ...")
+    # OT2 socket, won't be ready until the gantry is homed
+    ot2_sock = sock_client((ot2_ip, ot2_port))
+
+    pdict = OrderedDict()
+    hdict = OrderedDict()
+    ldict = {"plates": pdict, "holders": hdict}
+
+    for ps in plate_slots:
+        ot2_sock.send_msg(f"{ps},plate")
+        for _ in range(retry): 
+            ret = read_code(cam, "1QR", ps)
+            if len(ret)==1:
+                pdict[ret[0]] = {"slot": pos}
+                print(pos, ret[0])
+                break
+
+    for ps in holder_slots:
+        ot2_sock.send_msg(f"{ps},holder")
+        for _ in range(retry): 
+            ret = read_code(cam, "3QR", ps)
+            if len(ret.keys())==3:
+                break
+        for hidx in ['A', 'B', 'C']:
+            if hidx in ret.keys():
+                hdict[ret[hidx]] = {"slot": pos, "holder": hidx}
+        print(pos, ret)        
+        
+    ot2_sock.clean_up()
+    return ldict
+
 
 def read_OT2_layout(plate_slots, holder_slots, msg=None, ot2_ip="169.254.246.65", ot2_port=22):
     """ 
@@ -353,7 +467,7 @@ def generate_docs(ot2_layout, xls_fns, ldict=None,
     
     if ldict is None:
         print("Reading bar/QR codes, this might take a while ...")
-        ldict = read_OT2_layout(ot2_layout["plates"], ot2_layout["holders"])
+        ldict = read_OT2_layout2(ot2_layout["plates"], ot2_layout["holders"])
     
     print(ldict)
     

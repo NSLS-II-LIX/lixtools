@@ -103,8 +103,8 @@ def main(argv):
         
         if lbw=="corning_96_wellplate_360ul_flat":
             pipet.move_to(lbware["D12"].center().move(types.Point(x=10, y=0, z=230)))
-            ret = read_code(sc, "1QR", pos)
             for _ in range(retry): 
+                ret = read_code(sc, "1QR", pos)
                 if len(ret)==1:
                     pdict[ret[0]] = {"slot": pos}
                     print(pos, ret[0])

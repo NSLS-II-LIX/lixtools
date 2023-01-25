@@ -121,6 +121,25 @@ class webcam:
     def snapshot_w_avg(self, n=10, skip=2):
         imgs = [self.snapshot(rep=2) for _ in range(n)][skip:]
         return np.asarray(np.average(imgs, axis=0), dtype=np.uint8)
+
+    def process_cmd(self, cmd):
+        target = cmd['target']
+        if target in ["3QR", "1QR", "1bar"]:
+            if "zoom" in cmd.keys():
+                self.set_zoom(cmd['zoom'])
+            if "focus" in cmd.keys():
+                self.set_focus(cmd['focus'])
+            if "exposure" in cmd.keys():
+                self.set_exposure(cmd['exposure'])
+            crop_x = (cmd["crop_x"] if "crop_x" in cmd.keys() else 1)
+            crop_y = (cmd["crop_y"] if "crop_y" in cmd.keys() else 1)
+            pstr = ("%02d-"%cmd["slot"] if "slot" in cmd.keys() else "")
+            img = self.snapshot()  # read some images to make sure new camera settings take effect
+            img = self.snapshot()
+            code = read_code(img, target=target, 
+                             crop_x=crop_x, crop_y=crop_y, 
+                             debug=True, fn=f"{pstr}{target}.png")
+        return code
     
     
 def read_code(img, target="3QR", crop_x=1, crop_y=1, debug=True, fn="cur.png"):
@@ -169,7 +188,8 @@ def read_code(img, target="3QR", crop_x=1, crop_y=1, debug=True, fn="cur.png"):
         if debug:
             print(cs)
         return json.dumps(code)
-    
+
+
 
 def run():
     
@@ -194,24 +214,7 @@ def run():
         # required keys: target
         # optional keys: focus, zoom, crop_x, crop_y
         cmd = json.loads(msg)
-        target = cmd['target']
-        if target in ["3QR", "1QR", "1bar"]:
-            if "zoom" in cmd.keys():
-                cam.set_zoom(cmd['zoom'])
-            if "focus" in cmd.keys():
-                cam.set_focus(cmd['focus'])
-            if "exposure" in cmd.keys():
-                cam.set_exposure(cmd['exposure'])
-            crop_x = (cmd["crop_x"] if "crop_x" in cmd.keys() else 1)
-            crop_y = (cmd["crop_y"] if "crop_y" in cmd.keys() else 1)
-            pstr = ("%02d-"%cmd["slot"] if "slot" in cmd.keys() else "")
-            img = cam.snapshot()  # read some images to make sure new camera settings take effect
-            img = cam.snapshot()
-            code = read_code(img, target=target, 
-                             crop_x=crop_x, crop_y=crop_y, 
-                             debug=True, fn=f"{pstr}{target}.png")
-        else:
-            print("invalid request.")
+        code = cam.process_cmd(cmd)
             
         clientsocket.send(code.encode("ascii"))
         time.sleep(0.1)
