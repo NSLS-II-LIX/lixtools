@@ -9,10 +9,11 @@ import pylab as plt
 import glob,uuid,re,pathlib,os,socket,time
 import ipywidgets
 from IPython.display import display,clear_output
-import webbrowser,qrcode,base64
+import webbrowser,qrcode,base64,threading
 from collections import Counter,OrderedDict
 
 from lixtools.inst.webcam import webcam
+from pyzbar.pyzbar import decode,ZBarSymbol
 
 USE_SHORT_QR_CODE=False
 
