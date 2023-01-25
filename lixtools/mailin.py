@@ -351,7 +351,9 @@ def read_OT2_layout2(plate_slots, holder_slots, retry=3,
     print("running script on OT2 ...")
     cmd = ["ssh", "-i", ssh_key, "-o", f"port={ot2_port}",
            f"root@{ot2_ip}", "/var/lib/jupyter/notebooks/check_deck_config2.py"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    #proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    th = threading.Thread(target=subprocess.run, args=(cmd,))
+    th.start()
 
     print("connect to webcam ...")
     # establish connection to the camserv
@@ -389,6 +391,8 @@ def read_OT2_layout2(plate_slots, holder_slots, retry=3,
         print(pos, ret)        
         
     ot2_sock.clean_up()
+    th.join()
+
     return ldict
 
 
