@@ -21,8 +21,8 @@ def main(argv):
     print("Ready to move ...")
 
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serversocket.bind((OT2_IP, OT2_sock_port))
     serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    serversocket.bind((OT2_IP, OT2_sock_port))
     serversocket.listen(5)
     print('listening ...')
 
