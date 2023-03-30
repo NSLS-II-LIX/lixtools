@@ -312,5 +312,9 @@ class h5sol_HT(h5xs):
         """
         super().plot_d1s(*args, **kwargs)
      
-    def export_txt(self, *args, **kwargs):
-        super().export_d1s(*args, **kwargs)
+    def export_d1s(self, exclude_buf=True, *args, **kwargs):
+        if exclude_buf:
+            samples = list(self.buffer_list.keys())
+        else:
+            samples = self.samples
+        super().export_d1s(samples=samples, *args, **kwargs)
