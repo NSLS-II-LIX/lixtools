@@ -18,10 +18,13 @@ def main(argv):
                                       ["tips=", "plates=", "holders=", "run_name=", 
                                        "buf_limit=", "aspirate_fr=", "bottom_clearance=", "pause_after_mixing="])
     except getopt.GetoptError:
+        print("error getting options ...")
         print_help()
         sys.exit(2)
     
     if len(args)==0 or len(optlist)==0:
+        print(f"unexpected length of options: {len(args)} args, {len(optlist)} options ")
+        print(argv)
         print_help()
         exit(0)
     
@@ -58,5 +61,5 @@ def main(argv):
     generate_docs(ot2_layout, xls_fns, **parms)
         
 if __name__ == "__main__":
-   main(sys.argv[1:])
+    main(sys.argv[1:])
 
