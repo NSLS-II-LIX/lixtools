@@ -156,7 +156,7 @@ def display_solHT_data(fn, atsas_path="", read_only=False):
             ax2.set_xlim(left=0.5, right=qm)
             ax2.set_ylim(top=ym*1.1)
             ax2.yaxis.set_major_formatter(plt.NullFormatter())
-            qs = np.float(guinierQsTx.value)
+            qs = float(guinierQsTx.value)
             i0,rg,_ = dt.d1s[sn]['subtracted'].plot_Guinier(ax=ax3, qs=qs, fontsize=0)
             ax3.yaxis.set_major_formatter(plt.NullFormatter())
             guinierRgTx.value = ("%.2f" % rg)

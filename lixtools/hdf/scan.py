@@ -40,7 +40,7 @@ class h5xs_scan(h5xs_an):
             self.attrs[sn]['scan'] = json.loads(self.get_h5_attr(sn, 'scan'))
             
     def import_raw_data(self, fn_raw, sn=None, force_uniform_steps=True, prec=0.001, exp=1,
-                        force_synch='auto', force_synch_trig=0, **kwargs):
+                        force_synch='auto', force_synch_trig='auto', **kwargs):
         """ create new group, copy header, get scan parameters, calculate q-phi map
         """
         if not isinstance(fn_raw, list):
@@ -59,20 +59,59 @@ class h5xs_scan(h5xs_an):
                 self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
                              force_synch=force_synch, force_synch_trig=force_synch_trig)    
                 
-    def get_attr_from_map(self, sn, map_name):
+    def get_attr_from_map(self, sn, map_name, quiet=True):
         """ it is sometimes necessary to translate a 2D map into a 1D array, so that the index of the array
             can match the index of the 2D scattering data
         """
         m = np.copy(self.proc_data[sn]['maps'][map_name].d)
         if self.attrs[sn]['scan']['snaking']:
-            print(f"re-snaking {sn}, {map_name}      \r", end="")
+            if not quiet:
+                print(f"re-snaking {sn}, {map_name}      \r", end="")
             for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
                 m.d[i] = np.flip(m.d[i])
                 
         return m.flatten()
                                  
+    def make_map_from_overall_attr(self, attr, correct_for_transsmission=True):
+        """ this is used to calculate maps from attrubutes that are assigned to "overall" by simple stacking, and 
+            therefore need to be reorganized to recover the actual shape of the data
+            e.g. coefficients from NMF, or data extracted from the I(q) or I(phi) 1D profiles
+            
+            related to this, also need to translate between filename/frame number and coordinates in the maps
+        """
+        sl = 0
+        maps = []
+        for sn in dt.h5xs.keys():
+            if not 'scan' in self.attrs[sn].keys():
+                get_scan_parms(self.h5xs[sn], sn)
+
+            ll = np.prod(self.attrs[sn]['scan']['shape'])
+            m = MatrixWithCoords()
+            #m.d = np.copy(self.proc_data['overall']['attrs'][an][sl:sl+ll].reshape(self.attrs[sn]['scan']['shape']))
+            m.d = np.copy(attr[sl:sl+ll].reshape(self.attrs[sn]['scan']['shape']))
+            sl += ll
+
+            m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
+            m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
+            m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
+            m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
+            if self.attrs[sn]['scan']['snaking']:
+                for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
+                    m.d[i] = np.flip(m.d[i])
+
+            maps.append(m)
+
+        # assume the scans are of the same type, therefore start from the same direction
+        mm = maps[0].merge(maps[1:])
+        #if "overall" not in self.proc_data.keys():
+        #    self.proc_data['overall'] = {}
+        #    self.proc_data['overall']['maps'] = {}
+        #self.proc_data['overall']['maps'][an] = mm
+        return mm
+    
     def make_map_from_attr(self, sname="overall", attr_names="transmission", 
-                           ref_int_map="int_saxs", correct_for_transsmission=True, recalc_trans_map=True):
+                           ref_int_map="int_saxs", correct_for_transsmission=True, recalc_trans_map=True,
+                           debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
             proc_data[sname]["attrs"][attr_name]
             
@@ -124,7 +163,7 @@ class h5xs_scan(h5xs_an):
                 m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
                 m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
                 if self.attrs[sn]['scan']['snaking']:
-                    print(f"de-snaking {sn}, {an}      \r", end="")
+                    #print(f"de-snaking {sn}, {an}      \r", end="")
                     for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
                         m.d[i] = np.flip(m.d[i])
                 if "maps" not in self.proc_data[sn].keys():
@@ -148,9 +187,10 @@ class h5xs_scan(h5xs_an):
         trans[~idx] = 1
         if correct_for_transsmission:  
             for an in attr_names:
-                if an in ["transmission", "absorption"]:
+                if an in ["transmission", "absorption", "transmitted"]:
                     continue
-                print(f"transmmision correction: {sname}, {an}      \r", end="")
+                if debug:
+                    print(f"transmmision correction: {sname}, {an}      \r", end="")
                 #self.proc_data[sname]['maps'][an].d /= self.proc_data[sname]['maps']["transmission"].d
                 self.proc_data[sname]['maps'][an].d /= trans
 
@@ -166,8 +206,8 @@ class h5xs_scan(h5xs_an):
             mm.d[mm.d<0] = 0
             self.proc_data[sname]['maps']['absorption'] = mm
         
-        print()
-        self.save_data(save_sns=[sname], save_data_keys=["maps"])
+        if debug: print()
+        self.save_data(save_sns=[sname], save_data_keys=["maps"], quiet=(not debug))
         
     def calc_tomo_from_map(self, attr_names, debug=True, **kwargs):
         """ attr_names can be a string or a list
@@ -176,7 +216,7 @@ class h5xs_scan(h5xs_an):
         if len(self.h5xs)>1:
             sn = "overall"
         else:
-            sn = samples[0]
+            sn = self.samples[0]
         
         if isinstance(attr_names, str):
             attr_names = [attr_names]
@@ -201,12 +241,13 @@ class h5xs_scan(h5xs_an):
         for job in jobs:
             an,data = job.get()[0]
             self.proc_data[sn]['tomo'][an].d = data
-            print(f"data received for {an}                \r", end="")
+            if debug:
+                print(f"data received for {an}                \r", end="")
         pool.join()
             
         if debug:
             print(f"saving data                         ")        
-        self.save_data(save_sns=sn, save_data_keys=["tomo"])
+        self.save_data(save_sns=sn, save_data_keys=["tomo"], quiet=(not debug))
 
 def gen_scan_report(fn, client=None):
     dn = os.path.dirname(fn)

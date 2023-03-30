@@ -175,9 +175,10 @@ def proc_merge2d0(args):
     fh5.close()
     return [sn, starting_frame_cnt, ret]
 
-def update_res_path(res_path, replace_res_path={}):
+def update_res_path(res_path, replace_res_path={}, quiet=False):
     for rp1,rp2 in replace_res_path.items():
-        print("updating resource path ...")
+        if not quiet: 
+            print("updating resource path ...")
         if rp1 in res_path:
             res_path = res_path.replace(rp1, rp2)  
     return res_path
@@ -193,7 +194,7 @@ class h5xs_an(h5xs):
         
     """
     def __init__(self, *args, 
-                 Nphi=32, load_raw_data=True, pre_proc="2D", replace_path={}, 
+                 Nphi=32, load_raw_data=True, pre_proc="2D", replace_path={}, quiet=True,
                  **kwargs):
         """ pre_proc: should be either 1D or 2D, determines whether to save q-phi maps or 
                 azimuhtal averages as the pre-processed data
@@ -240,12 +241,12 @@ class h5xs_an(h5xs):
                 self.attrs[sn] = {}
                 fn_raw0 = self.fh5[sn].attrs['source']
                 fn_raw_path = os.path.dirname(fn_raw0)
-                fn_raw = update_res_path(fn_raw0, replace_path)
+                fn_raw = update_res_path(fn_raw0, replace_path, quiet=quiet)
                 if not os.path.exists(fn_raw):
                     raise Exception(f"raw data file {fn_raw} does not exist ...")
                 if fn_raw!=fn_raw0:
                     self.enable_write(True)
-                    self.fh5[sn]['source'] = fn_raw
+                    self.fh5[sn].attrs['source'] = fn_raw
                     self.enable_write(False)
                 if load_raw_data:
                     if not fn_raw in self.raw_data.keys():
@@ -429,7 +430,7 @@ class h5xs_an(h5xs):
                                                         debug, detectors, self.qgrid))
                         results[sn][fr1] = data
                     fcnt += nframes
-                dh5.explict_close_h5()
+                dh5.explicit_close_h5()
                 
         if N>1:             
             for job in jobs:
@@ -647,7 +648,7 @@ class h5xs_an(h5xs):
         fh5.close()
     
     @h5_file_access
-    def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None):
+    def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None, quiet=False):
         print("saving processed data ...")
         if save_sns is None:
             save_sns = list(self.fh5.keys())
@@ -674,7 +675,8 @@ class h5xs_an(h5xs):
                     self.pack(sn, data_key, sub_key)
         self.fh5.flush()
         self.enable_write(False)
-        print("done.                      ")
+        if not quiet:
+            print("done.                      ")
     
     @h5_file_access
     def pack(self, sn, data_key, sub_key, fh5=None):
