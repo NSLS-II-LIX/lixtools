@@ -241,16 +241,16 @@ class h5sol_HT(h5xs):
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
         if filter_data=="keep":
-            self.average_samples(update_only=update_only, filter_data=False, selection=None, debug=debug)
+            self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
-            self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
+            self.average_d1s(update_only=update_only, filter_data=filter_data, debug=debug)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, debug=debug)
         
-    def average_samples(self, **kwargs):
-        """ if update_only is true: only work on samples that do not have "merged' data
-            selection: if None, retrieve from dataset attribute
-        """
-        super().average_d1s(**kwargs)
+    #def average_samples(self, **kwargs):
+    #    """ if update_only is true: only work on samples that do not have "merged' data
+    #        selection: if None, retrieve from dataset attribute
+    #    """
+    #    super().average_d1s(**kwargs)
             
     def subtract_buffer(self, samples=None, update_only=False, sc_factor=1., debug=False):
         """ if update_only is true: only work on samples that do not have "subtracted' data
@@ -312,9 +312,14 @@ class h5sol_HT(h5xs):
         """
         super().plot_d1s(*args, **kwargs)
      
-    def export_d1s(self, exclude_buf=True, *args, **kwargs):
-        if exclude_buf:
-            samples = list(self.buffer_list.keys())
-        else:
-            samples = self.samples
-        super().export_d1s(samples=samples, *args, **kwargs)
+    def export_d1s(self, samples=None, exclude_buf=True, **kwargs):
+        """ exclude_buf is only considered when samples is None
+        """
+        if samples is None: 
+            if exclude_buf:
+                samples = list(self.buffer_list.keys())
+            else:
+                samples = self.samples
+        elif isinstance(samples, str):
+            samples = [samples]
+        super().export_d1s(samples=samples, **kwargs)
