@@ -93,6 +93,9 @@ class solHTgui:
             del self.dt
 
         self.outTxt.value = f"loadfing file: {fn}"
+        if self.dt:
+            self.dt.fh5.close()
+            del self.dt
         self.dt = h5sol_HT(fn, read_only=self.read_only)
         self.dt.load_d1s()
         self.dt.subtract_buffer(sc_factor=-1, debug='quiet')
@@ -163,8 +166,8 @@ class solHTgui:
         if self.dt is None:
             return
 
-        if self.prev_sn is not None:
-            self.dt.export_d1s(self.prev_sn, path="processed/", save_subtracted=self.exportSubtractedCB.value)
+        #if self.prev_sn is not None:
+        #    self.dt.export_d1s(self.prev_sn, path="processed/", save_subtracted=self.exportSubtractedCB.value)
         sn = self.ddSample.value
         if sn is None:
             return
