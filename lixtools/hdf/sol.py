@@ -268,7 +268,7 @@ class h5sol_HT(h5xs):
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
-        self.enable_write(True)
+        #self.enable_write(True)
         for sn in samples:
             if update_only and 'subtracted' in list(self.d1s[sn].keys()): continue
             if sn not in list(self.buffer_list.keys()): continue
@@ -294,7 +294,7 @@ class h5sol_HT(h5xs):
                 sf = self.attrs[sn]['sc_factor']
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
                                                                           sc_factor=sf, debug=debug)
-            self.enable_write(False)
+        #self.enable_write(False)
 
         self.update_h5() 
         if debug is True:

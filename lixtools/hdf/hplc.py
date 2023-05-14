@@ -170,12 +170,11 @@ class h5sol_HPLC(h5xs):
         if self.read_only:
             print("h5 file is read-only ...")
         else:
-            self.enable_write(True)
+            grp = f""
             self.attrs[sn]['sc_factor'] = sc_factor
             self.attrs[sn]['svd excluded frames'] = excluded_frames_list
             self.attrs[sn]['svd parameter Nc'] = Nc
             self.attrs[sn]['svd parameter poly_order'] = poly_order
-            self.enable_write(False)
         
         if 'subtracted' in self.d1s[sn].keys():
             del self.d1s[sn]['subtracted']
@@ -223,10 +222,8 @@ class h5sol_HPLC(h5xs):
             if self.read_only:
                 print("h5 file is read-only ...")
             else:
-                self.enable_write(True)
                 self.attrs[sn]['buffer frames'] = listbfn
                 self.attrs[sn]['sc_factor'] = sc_factor
-                self.enable_write(False)
             self.d1s[sn]['buf average'] = d1b
             if 'subtracted' in self.d1s[sn].keys():
                 del self.d1s[sn]['subtracted']
@@ -272,7 +269,7 @@ class h5sol_HPLC(h5xs):
         nd = len(data)
         #qgrid = data[0].qgrid
         
-        exp_t = self.header(sn)['pilatus']['exposure_time']
+        exp_t = self.exp_time(sn)
         ts = self.get_ts(sn, exp_t)
         idx = [(self.qgrid>i_minq) & (self.qgrid<i_maxq) for [i_minq,i_maxq] in q_ranges]
         nq = len(idx)
@@ -315,7 +312,7 @@ class h5sol_HPLC(h5xs):
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
                   show_hplc_data=[True, False],
                   export_txt=False, debug=False, 
-                  fig_w=8, fig_h1=2, fig_h2=3.5, ax1=None, ax2=None):
+                  fig_w=8, fig_h1=2, fig_h2=3.5, fig=None, ax1=None, ax2=None):
         """ plot "merged" if no "subtracted" present
             q_ranges: a list of [q_min, q_max], within which integrated intensity is calculated 
             export_txt: export the scattering-intensity-based chromatogram
@@ -324,7 +321,8 @@ class h5sol_HPLC(h5xs):
         
         if ax1 is None:
             if plot2d:
-                fig = plt.figure(figsize=(fig_w, fig_h1+fig_h2))
+                if fig is None:
+                    fig = plt.figure(figsize=(fig_w, fig_h1+fig_h2))
                 hfrac = 0.82                
                 ht2 = fig_h1/(fig_h1+fig_h2)
                 box1 = [0.1, ht2+0.05, hfrac, (0.95-ht2)*hfrac] # left, bottom, width, height

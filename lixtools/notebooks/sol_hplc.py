@@ -253,8 +253,8 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
                      clim=[float(cminTx.value), float(cmaxTx.value)], 
                      logScale=x2dMaplogCB.value,
                      show_hplc_data=[showLC1CB.value, showLC2CB.value], 
-                     ax1=ax1a, ax2=ax1b)
-        plt.show(fig1)
+                     fig=fig1, ax1=ax1a, ax2=ax1b)
+        #plt.show(fig1)
         updateDefaults()
     
     def changeSubtractionMode(w):
@@ -308,7 +308,7 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
                                   Nc = int(ncTx.value), fit_with_polynomial=True, 
                                   poly_order=polyN,
                                   plot_fit=True, ax1=ax2a, ax2=ax2b)
-            plt.show(fig2)
+            #plt.show(fig2)
             plt.tight_layout()
         
         x2dMapSubtractedCB.value = True
