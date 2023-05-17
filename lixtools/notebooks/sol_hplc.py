@@ -238,8 +238,6 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
         box2 = [0.1, 0.02, hfrac, ht2*hfrac]
         ax1a = fig1.add_axes(box1)
         ax1b = fig1.add_axes(box2)
-        #ax1a = fig1.add_subplot(211)
-        #ax1b = fig1.add_subplot(212)
         
         q_ranges = []
         for roiTx in[xROI1Tx, xROI2Tx, xROI3Tx]:
@@ -254,7 +252,6 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
                      logScale=x2dMaplogCB.value,
                      show_hplc_data=[showLC1CB.value, showLC2CB.value], 
                      fig=fig1, ax1=ax1a, ax2=ax1b)
-        #plt.show(fig1)
         updateDefaults()
     
     def changeSubtractionMode(w):
@@ -308,7 +305,6 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
                                   Nc = int(ncTx.value), fit_with_polynomial=True, 
                                   poly_order=polyN,
                                   plot_fit=True, ax1=ax2a, ax2=ax2b)
-            #plt.show(fig2)
             plt.tight_layout()
         
         x2dMapSubtractedCB.value = True
