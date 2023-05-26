@@ -1,10 +1,13 @@
-from py4xs.hdf import h5xs,lsh5,h5_file_access  
+from py4xs.hdf import h5xs,lsh5,h5_file_access,get_d1s_from_grp  
 from py4xs.slnxs import trans_mode,estimate_scaling_factor
 import numpy as np
 import pylab as plt
 import json,time,copy
+import h5py
 
 from scipy.interpolate import splrep,sproot,splev,UnivariateSpline
+
+grp_empty_cells = ".empty"
 
 class h5sol_ref(h5xs):
     def __init__(self, *args, **kwargs):
@@ -139,19 +142,30 @@ class h5sol_HT(h5xs):
         """
         header = db[uid]
         
-    @h5_file_access  
-    def load_d1s(self, sn=None):
-        if sn==None:
-            samples = self.samples
-        elif isinstance(sn, str):
-            samples = [sn]
-        else:
-            samples = sn
+    def load_d1s(self, sn=None, read_attrs=['buffer']):
+        super().load_d1s(sn, read_attrs=read_attrs)
         
-        for sn in samples:
-            super().load_d1s(sn)
-            if 'buffer' in list(self.fh5[sn].attrs.keys()):
-                self.buffer_list[sn] = self.fh5[sn].attrs['buffer'].split()
+    @h5_file_access  
+    def assign_sample_attr(self, sa_dict, attr_name="buffer", debug=False):
+        attr_list = self.__dict__[f"{attr_name}_list"]
+        for sn in list(sa_dict.keys()):
+            if isinstance(sa_dict[sn], str):
+                attr_list[sn] = [sa_dict[sn]]
+            else:
+                attr_list[sn] = sa_dict[sn]
+        
+        if debug is True:
+            print('updating buffer assignments')
+        if self.read_only:
+            print("h5 file is read-only ...")
+            return
+        self.enable_write(True)
+        for sn in self.samples:
+            if sn in list(attr_list.keys()):
+                self.fh5[sn].attrs[attr_name] = '  '.join(attr_list[sn])
+            elif attr_name in list(self.fh5[sn].attrs):
+                del self.fh5[sn].attrs[attr_name]
+        self.enable_write(False)
         
     @h5_file_access  
     def assign_buffer(self, buf_list, debug=False):
@@ -162,24 +176,7 @@ class h5sol_HT(h5xs):
             }
             anything missing is considered buffer
         """
-        for sn in list(buf_list.keys()):
-            if isinstance(buf_list[sn], str):
-                self.buffer_list[sn] = [buf_list[sn]]
-            else:
-                self.buffer_list[sn] = buf_list[sn]
-        
-        if debug is True:
-            print('updating buffer assignments')
-        if self.read_only:
-            print("h5 file is read-only ...")
-            return
-        self.enable_write(True)
-        for sn in self.samples:
-            if sn in list(self.buffer_list.keys()):
-                self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
-            elif 'buffer' in list(self.fh5[sn].attrs):
-                del self.fh5[sn].attrs['buffer']
-        self.enable_write(False)
+        self.assign_sample_attr(buf_list, "buffer")
 
     @h5_file_access  
     def change_buffer(self, sample_name, buffer_name):
@@ -245,14 +242,9 @@ class h5sol_HT(h5xs):
         else:
             self.average_d1s(update_only=update_only, filter_data=filter_data, debug=debug)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, debug=debug)
-        
-    #def average_samples(self, **kwargs):
-    #    """ if update_only is true: only work on samples that do not have "merged' data
-    #        selection: if None, retrieve from dataset attribute
-    #    """
-    #    super().average_d1s(**kwargs)
-            
-    def subtract_buffer(self, samples=None, update_only=False, sc_factor=1., debug=False):
+                    
+    def subtract_buffer(self, samples=None, update_only=False, sc_factor=1., 
+                        input_grp='averaged', debug=False):
         """ if update_only is true: only work on samples that do not have "subtracted' data
             sc_factor: if <0, read from the dataset attribute
         """
@@ -275,25 +267,25 @@ class h5sol_HT(h5xs):
             
             bns = self.buffer_list[sn]
             if isinstance(bns, str):
-                self.d1b[sn] = self.d1s[bns]['averaged']  # ideally this should be a link
+                self.d1b[sn] = self.d1s[bns][input_grp]  # ideally this should be a link
             else:
-                self.d1b[sn] = self.d1s[bns[0]]['averaged'].avg([self.d1s[bn]['averaged'] for bn in bns[1:]], 
+                self.d1b[sn] = self.d1s[bns[0]][input_grp].avg([self.d1s[bn][input_grp] for bn in bns[1:]], 
                                                                 debug=debug)
             if sc_factor=="auto":
-                sf = estimate_scaling_factor(self.d1s[sn]['averaged'], self.d1b[sn])
+                sf = "auto" #estimate_scaling_factor(self.d1s[sn][input_grp], self.d1b[sn])
                 # Data1d.bkg_cor() normalizes trans first before applying sc_factor
                 # in contrast the estimated 
-                sf /= self.d1s[sn]['averaged'].trans/self.d1b[sn].trans
-                if debug!="quiet":
-                    print(f"setting sc_factor for {sn} to {sf:.4f}")
+                #sf /= self.d1s[sn][input_grp].trans/self.d1b[sn].trans
+                #if debug!="quiet":
+                #    print(f"setting sc_factor for {sn} to {sf:.4f}")
                 self.attrs[sn]['sc_factor'] = sf
             elif sc_factor>0:
                 self.attrs[sn]['sc_factor'] = sc_factor
                 sf = sc_factor
             else:
                 sf = self.attrs[sn]['sc_factor']
-            self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
-                                                                          sc_factor=sf, debug=debug)
+            self.d1s[sn]['subtracted'] = self.d1s[sn][input_grp].bkg_cor(self.d1b[sn], sc_factor=sf,
+                                                                         label=f'{sn}-subtracted', debug=debug)
         #self.enable_write(False)
 
         self.update_h5() 
@@ -301,16 +293,15 @@ class h5sol_HT(h5xs):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
                 
-    def plot_sample(self, *args, **kwargs):
-        """ show_subtracted:
-                work only if sample is background-subtracted, show the subtracted result
-            show_subtraction: 
-                if True, show sample and boffer when show_subtracted
-            show_overlap: 
-                also show data in the overlapping range from individual detectors
-                only allow if show_subtracted is False
-        """
-        super().plot_d1s(*args, **kwargs)
+    def plot_d1s(self, sn, show_subtracted='subtracted', **kwargs):
+        if show_subtracted:
+            src_d1 = self.d1s[sn]['averaged']
+            bn = self.buffer_list[sn][0]  # this does not accomordate multiple buffers
+            bkg_d1 = self.d1s[bn]['averaged']
+        else:
+            src_d1 = None
+            bkg_d1 = None
+        super().plot_d1s(sn, show_subtracted=show_subtracted, src_d1=src_d1, bkg_d1=bkg_d1, **kwargs)
      
     def export_d1s(self, samples=None, exclude_buf=True, **kwargs):
         """ exclude_buf is only considered when samples is None
@@ -323,3 +314,135 @@ class h5sol_HT(h5xs):
         elif isinstance(samples, str):
             samples = [samples]
         super().export_d1s(samples=samples, **kwargs)
+
+        
+class h5sol_fc(h5sol_HT):
+    """ 
+    fixed cells, each sample has a corresponding buffer, which could be from a different holder
+    each sample/buffer also has a corresponding empty cell, from a different holder
+    new key under self.d1s[sn]: empty_subtracted
+    
+    before processing starts, make soft links to the data file that contain empty cell scattering
+    assign empty cell scattering to each sample
+    
+    """    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, exclude_sample_names=['.empty'], **kwargs)
+        self.empty_list = {}
+        self.exclude_sample_names = [grp_empty_cells]
+    
+    def load_d1s(self, sn=None):
+        super().load_d1s(sn=sn, read_attrs=['buffer', 'empty'])
+        
+        
+    @h5_file_access  
+    def link_file(self, fn, as_empty=True):
+        """ 
+        this might be useful when the buffer in the same holder does not work the best
+        data from a different holder can be linked here
+        all samples (top-level groups in the file) will be linked
+        
+        if as_empty is True, the external data are linked under the empty group
+        """
+        
+        self.enable_write(True)
+
+        with h5py.File(fn, "r") as fh5:
+            # check for redundant sample names
+            new_samples = list(fh5.keys())
+            if as_empty:
+                root = grp_empty_cells
+                if not grp_empty_cells in list(self.fh5.keys()):
+                    self.fh5.create_group(grp_empty_cells)
+                    cur_samples = []
+                else:
+                    cur_samples = list(self.fh5[grp_empty_cells].keys())
+            else:
+                root = ''
+                cur_samples = self.samples
+            redundant_names = list(set(cur_samples) & set(new_samples))
+            if len(redundant_names)>0:
+                print("linking not allow, found redundant sample: ", redundant_names)
+                return
+            
+            for sn in new_samples:
+                self.fh5[f'{root}/{sn}'] = h5py.ExternalLink(fn, sn) #SoftLink(fh5[sn])
+    
+        self.enable_write(False)     
+    
+    def assign_empty(self, empty_dict):
+        """
+        assign the empty cell scattering, the sn is user-specified, could come from the scan metadata
+        consider saving that info during data collection
+        
+        for now, prepare the dictionary from the data collection spreadsheet, similar to buffer_list/sb_dict
+        """        
+        self.assign_sample_attr(empty_dict, "empty")
+        
+    @h5_file_access  
+    def get_empty_d1(self, sn, input_grp="averaged"):
+        ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
+        d1s,attrs = get_d1s_from_grp(self.fh5[f'.empty/{ens}/processed'], self.qgrid, ens)
+        d1b = d1s[input_grp]
+        return d1b
+    
+    @h5_file_access  
+    def subtract_empty(self, samples, input_grp="averaged", debug=False):
+        """ this should be based on monitor counts strictly
+        """
+        if samples is None:
+            samples = list(self.empty_list.keys())
+        elif isinstance(samples, str):
+            if sn not in list(self.empty_list.keys()): 
+                return
+            samples = [samples]
+        
+        if self.read_only:
+            print("h5 file is read-only ...")
+            return
+        
+        if debug is True:
+            print("start processing: subtract_empty()")
+            t1 = time.time()
+
+        for sn in samples:
+            self.d1s[sn]['empty_subtracted'] = self.d1s[sn][input_grp].bkg_cor(self.get_empty_d1(sn, input_grp), 
+                                                                               label=f"{sn}-empty_subtracted", debug=debug)
+
+        self.save_d1s() 
+        if debug is True:
+            t2 = time.time()
+            print("done, time lapsed: %.2f sec" % (t2-t1))
+            
+    def process(self, detectors=None, update_only=False,
+                reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
+                filter_data=True, debug=False, N = 8):
+        """
+        subtract empty first and populate d1s[sn]['empty_subtracted']
+        """
+        if filter_data=="keep":
+            self.load_d1s()
+        self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
+                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+        self.set_trans(transMode=trans_mode.from_waxs)
+        if filter_data=="keep":
+            self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
+        else:
+            self.average_d1s(update_only=update_only, filter_data=filter_data, debug=debug)
+        self.subtract_empty(self.samples)
+        self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
+        
+    def plot_d1s(self, sn, show_subtracted='empty_subtracted', **kwargs):
+        if show_subtracted=='empty_subtracted':
+            src_d1 = self.d1s[sn]['averaged']
+            bkg_d1 = self.get_empty_d1(sn)
+        elif show_subtracted=='subtracted':
+            src_d1 = self.d1s[sn]['empty_subtracted']
+            bn = self.buffer_list[sn][0]  # this does not accomordate multiple buffers
+            bkg_d1 = self.d1s[bn]['empty_subtracted']
+        else:
+            show_subtracted = False
+            src_d1 = None
+            bkg_d1 = None
+        h5xs.plot_d1s(self, sn, show_subtracted=show_subtracted, src_d1=src_d1, bkg_d1=bkg_d1, **kwargs)
+     

@@ -12,6 +12,8 @@ from IPython.display import display,clear_output
 import webbrowser,qrcode,base64,threading
 from collections import Counter,OrderedDict
 
+from lixtools.samples import parseHolderSpreadsheet
+
 USE_SHORT_QR_CODE=False
 
 def getUID():
@@ -257,134 +259,6 @@ def validatePlateSampleListGUI():
     btnValidate.on_click(on_validate_clicked)
     
 
-# adapted from 04-sample.py
-def check_sample_name(sample_name, sub_dir=None, 
-                      check_for_duplicate=True, check_dir=False, 
-                      data_path="./" # global variable in 04-sample.py
-                     ):    
-    if len(sample_name)>42:  # file name length limit for Pilatus detectors
-        print("Error: the sample name is too long:", len(sample_name))
-        return False
-    l1 = re.findall('[^:._A-Za-z0-9\-]', sample_name)
-    if len(l1)>0:
-        print("Error: the file name contain invalid characters: ", l1)
-        return False
-
-    if check_for_duplicate:
-        f_path = data_path
-        if sub_dir is not None:
-            f_path += ('/'+sub_dir+'/')
-        #if DET_replace_data_path:
-            #f_path = data_path.replace(default_data_path_root, substitute_data_path_root)
-        if PilatusFilePlugin.froot == data_file_path.ramdisk:
-            f_path = data_path.replace(data_file_path.gpfs.value, data_file_path.ramdisk.value)
-        if check_dir:
-            fl = glob.glob(f_path+sample_name)
-        else:
-            fl = glob.glob(f_path+sample_name+"_000*")
-        if len(fl)>0:
-            print(f"Error: name already exists: {sample_name} at {f_path}")
-            return False
-
-    return True
-
-
-# adapted from startup_solution.py
-def parseSpreadsheet(infilename, sheet_name=0, strFields=[]):
-    """ dropna removes empty rows
-    """
-    converter = {col: str for col in strFields} 
-    DataFrame = pd.read_excel(infilename, sheet_name=sheet_name, 
-                              converters=converter, engine="openpyxl")
-    DataFrame.dropna(axis=0, how='all', inplace=True)
-    return DataFrame.to_dict()
-
-def checkHolderSpreadsheet(spreadSheet, sheet_name=0,
-                check_for_duplicate=False, configName=None,
-                requiredFields=['sampleName', 'holderName', 'position'],
-                optionalFields=['volume', 'exposure', 'bufferName'],
-                autofillFields=['holderName', 'volume', 'exposure'],
-                strFields=['sampleName', 'bufferName', 'holderName'], 
-                numFields=['volume', 'position', 'exposure'], 
-                min_load_volume=50):
-    d = parseSpreadsheet(spreadSheet, sheet_name, strFields)
-    tf = set(requiredFields) - set(d.keys())
-    if len(tf)>0:
-        raise Exception(f"missing fields in spreadsheet: {list(tf)}")
-    autofillSpreadsheet(d, fields=autofillFields)
-    allFields = list(set(requiredFields+optionalFields).intersection(d.keys()))
-    for f in list(set(allFields).intersection(strFields)):
-        for e in d[f].values():
-            if not isinstance(e, str):
-                if not np.isnan(e):
-                    raise Exception(f"non-string value in {f}: {e}")
-    for f in list(set(allFields).intersection(numFields)):
-        for e in d[f].values():
-            if not (isinstance(e, int) or isinstance(e, float)):
-                raise Exception(f"non-numerical value in {f}: {e}")
-            if e<=0 or np.isnan(e):
-                raise Exception(f"invalid value in {f}: {e}, positive value required.")
-    if 'volume' in allFields:
-        if np.min(list(d['volume'].values()))<min_load_volume:
-            raise Exception(f"load volume must be greater than {min_load_volume} ul!")
-
-    # max position number is 18
-    sp = np.asarray(list(d['position'].values()), dtype=int)
-    if sp.max()>18:
-        raise Exception(f"invalid sample positionL {sp.max()}.")
-    if sp.min()<1:
-        raise Exception(f"invalid sample positionL {sp.min()}.")
-
-    sdict = {}
-    for (hn,pos,sn,bn) in zip(d['holderName'].values(), 
-                              d['position'].values(), 
-                              d['sampleName'].values(), 
-                              d['bufferName'].values()):
-        if not hn in sdict.keys():
-            sdict[hn] = {}
-        if str(sn)=='nan':
-            continue
-        if pos in sdict[hn].keys():
-            raise Exception(f"duplicate sample position {pos} in {hn}")
-        if not check_sample_name(sn, check_for_duplicate=False):
-            raise Exception(f"invalid sample name: {sn} in holder {hn}")
-        sdict[hn][pos] = {'sample': sn}
-        if str(bn)!='nan':
-            sdict[hn][pos]['buffer'] = bn 
-
-    for hn,sd in sdict.items():
-        plist = list(sd.keys())
-        slist = [t['sample'] for t in sd.values()]
-        for pos,t in sd.items():
-            if slist.count(t['sample'])>1:
-                raise Exception(f"duplicate sample name {t['sample']} in {hn}")
-            if not 'buffer' in t.keys():
-                continue
-            if not t['buffer'] in slist:
-                raise Exception(f"{t['buffer']} is not a valid buffer in {hn}")
-            bpos = plist[slist.index(t['buffer'])]
-            if (bpos-pos)%2:
-                raise Exception(f"{t['sample']} and its buffer not in the same row in holder {hn}")
-                    
-    return sdict
-
-def autofillSpreadsheet(d, fields=['holderName', 'volume']):
-    """ if the filed in one of the autofill_fileds is empty, duplicate the value from the previous row
-    """
-    col_names = list(d.keys())
-    n_rows = len(d[col_names[0]])
-    if n_rows<=1:
-        return
-    
-    for ff in fields:
-        if ff not in d.keys():
-            #print(f"invalid column name: {ff}")
-            continue
-        idx = list(d[ff].keys())
-        for i in range(n_rows-1):
-            if str(d[ff][idx[i+1]])=='nan':
-                d[ff][idx[i+1]] = d[ff][idx[i]] 
-
 def validateHolderSpreadsheet(fn, proposal_id, SAF_id):
     # meant to be used by the users to attach to SAF
     # limit to 3 sample holders per spreadsheet
@@ -411,3 +285,14 @@ def validateHolderSpreadsheet(fn, proposal_id, SAF_id):
     wb.save(fn)
     
     print("Done.")
+
+def checkHolderSpreadsheet(spreadSheet, sheet_name=0,
+                check_for_duplicate=False, configName=None, min_load_volume=50):
+    return parseHolderSpreadsheet(spreadSheet, sheet_name=sheet_name,
+                                  check_for_duplicate=check_for_duplicate, configName=configName,
+                                  requiredFields=['sampleName', 'holderName', 'position'],
+                                  optionalFields=['volume', 'exposure', 'bufferName'],
+                                  autofillFields=['holderName', 'volume', 'exposure'],
+                                  strFields=['sampleName', 'bufferName', 'holderName'], 
+                                  numFields=['volume', 'position', 'exposure'], 
+                                  min_load_volume=min_load_volume, maxNsamples=18, sbSameRow=True)
