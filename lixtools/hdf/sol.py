@@ -362,11 +362,10 @@ class h5sol_fc(h5sol_HT):
                 cur_samples = self.samples
             redundant_names = list(set(cur_samples) & set(new_samples))
             if len(redundant_names)>0:
-                print("linking not allow, found redundant sample: ", redundant_names)
-                return
-            
-            for sn in new_samples:
-                self.fh5[f'{root}/{sn}'] = h5py.ExternalLink(fn, sn) #SoftLink(fh5[sn])
+                print("linking not allowed, found redundant sample: ", redundant_names)
+            else:
+                for sn in new_samples:
+                    self.fh5[f'{root}/{sn}'] = h5py.ExternalLink(fn, sn) #SoftLink(fh5[sn])
     
         self.enable_write(False)     
     
@@ -424,11 +423,11 @@ class h5sol_fc(h5sol_HT):
             self.load_d1s()
         self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
-        self.set_trans(transMode=trans_mode.from_waxs)
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
             self.average_d1s(update_only=update_only, filter_data=filter_data, debug=debug)
+        self.set_trans(trans_mode.external)
         self.subtract_empty(self.samples)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
         
