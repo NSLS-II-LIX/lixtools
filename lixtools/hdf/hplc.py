@@ -307,7 +307,7 @@ class h5sol_HPLC(h5xs):
     def plot_data(self, sn=None, 
                   q_ranges=[[0.02,0.05]], logROI=False, markers=['bo', 'mo', 'co', 'yo'],
                   flowrate=-1, plot_merged=False,
-                  ymin=-1, ymax=-1, offset=0, uv_scale=1, showFWHM=False, 
+                  ymin=-1, ymax=-1, offset=0, uv_xscale=1, uv_yscale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
                   show_hplc_data=[True, False],
@@ -376,8 +376,8 @@ class h5sol_HPLC(h5xs):
         i = 0 
         for k,dc in d_hplc.items():
             if show_hplc_data[i]:
-                ax1a.plot(np.asarray(dc[0])+offset,
-                         ymin+dc[1]/np.max(dc[1])*(ymax-ymin)*uv_scale, label=k)
+                ax1a.plot(np.asarray(dc[0])*uv_xscale+offset,
+                         ymin+dc[1]/np.max(dc[1])*(ymax-ymin)*uv_yscale, label=k)
             i += 1
             #ax1a.set_ylim(0, np.max(dc[0][2]))
 
@@ -424,8 +424,12 @@ class h5sol_HPLC(h5xs):
             ext = [0, len(data), len(self.qgrid), 0]
             asp = len(d_t)/len(self.qgrid)/(fig_w/fig_h1)
             if logScale:
-                im = ax2.imshow(np.log(d2), extent=ext, aspect="auto") 
-                im.set_clim(np.log(clim))
+                d2_log = np.copy(d2)
+                d2_log = np.log(d2)
+                clim_log = np.log(clim)
+                #d2_log[np.isnan(d2_log)] = clim_log[0]
+                im = ax2.imshow(d2_log, extent=ext, aspect="auto") 
+                im.set_clim(clim_log)
             else:
                 im = ax2.imshow(d2, extent=ext, aspect="auto") 
                 im.set_clim(clim)
