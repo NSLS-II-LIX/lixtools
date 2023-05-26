@@ -330,10 +330,10 @@ class h5sol_fc(h5sol_HT):
         super().__init__(*args, exclude_sample_names=['.empty'], **kwargs)
         self.empty_list = {}
         self.exclude_sample_names = [grp_empty_cells]
-    
+        self.list_samples(quiet=True)
+
     def load_d1s(self, sn=None):
         super().load_d1s(sn=sn, read_attrs=['buffer', 'empty'])
-        
         
     @h5_file_access  
     def link_file(self, fn, as_empty=True):
