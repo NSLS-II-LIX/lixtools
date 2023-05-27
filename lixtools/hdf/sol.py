@@ -229,7 +229,7 @@ class h5sol_HT(h5xs):
         
     def process(self, detectors=None, update_only=False,
                 reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
-                filter_data=True, debug=False, N = 1):
+                filter_data=True, selection=None, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
         if filter_data=="keep":
@@ -240,7 +240,7 @@ class h5sol_HT(h5xs):
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
-            self.average_d1s(update_only=update_only, filter_data=filter_data, debug=debug)
+            self.average_d1s(update_only=update_only, filter_data=filter_data, selection=selection, debug=debug)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, debug=debug)
                     
     def subtract_buffer(self, samples=None, update_only=False, sc_factor=1., 
@@ -415,7 +415,7 @@ class h5sol_fc(h5sol_HT):
             
     def process(self, detectors=None, update_only=False,
                 reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
-                filter_data=True, debug=False, N = 8):
+                filter_data=True, selection=None, debug=False, N = 8):
         """
         subtract empty first and populate d1s[sn]['empty_subtracted']
         """
@@ -426,7 +426,7 @@ class h5sol_fc(h5sol_HT):
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
-            self.average_d1s(update_only=update_only, filter_data=filter_data, debug=debug)
+            self.average_d1s(update_only=update_only, filter_data=filter_data, selection=selection, debug=debug)
         self.set_trans(trans_mode.external)
         self.subtract_empty(self.samples)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
