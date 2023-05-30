@@ -228,7 +228,7 @@ class solHTgui:
                 self.dt.subtract_buffer(sn, sc_factor=sc_factor, debug='quiet')
                 re_calc = False
         self.ax1.clear()
-        self.dt.plot_sample(sn, ax=self.ax1, show_subtracted=show_sub)
+        self.dt.plot_d1s(sn, ax=self.ax1, show_subtracted=show_sub)
         self.ax2.clear()
         self.ax3.clear()
         if isSample and show_sub:
@@ -401,7 +401,7 @@ def display_solHT_data(fn, atsas_path="", read_only=False):
                 dt.subtract_buffer(sn, sc_factor=sc_factor, debug='quiet')
                 re_calc = False
         ax1.clear()
-        dt.plot_sample(sn, ax=ax1, show_subtracted=show_sub)
+        dt.plot_d1s(sn, ax=ax1, show_subtracted=show_sub)
         ax2.clear()
         ax3.clear()
         if isSample and show_sub:

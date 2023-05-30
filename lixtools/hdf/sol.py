@@ -293,11 +293,12 @@ class h5sol_HT(h5xs):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
                 
-    def plot_d1s(self, sn, show_subtracted='subtracted', **kwargs):
+    def plot_d1s(self, sn, show_subtracted=True, **kwargs):
         if show_subtracted:
             src_d1 = self.d1s[sn]['averaged']
             bn = self.buffer_list[sn][0]  # this does not accomordate multiple buffers
             bkg_d1 = self.d1s[bn]['averaged']
+            show_subtracted='subtracted'
         else:
             src_d1 = None
             bkg_d1 = None
