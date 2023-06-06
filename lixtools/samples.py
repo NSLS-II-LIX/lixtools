@@ -83,6 +83,11 @@ def get_holders_under_config(spreadSheet, configName):
                 holders[d['holderPosition'][idx[i]]] = d['holderName'][idx[i]]
 
         return holders    
+
+def get_blank_holder_dict(spreadSheet):
+    d = parseSpreadsheet(spreadSheet, return_dataframe=True)
+    hds = d.loc[~d['BlankHolderName'].isna(), d.columns.isin(['holderName', 'BlankHolderName'])]
+    return hds.set_index('holderName').to_dict()['BlankHolderName']    
     
 def get_empty_holder_dict(spreadSheet):
     d = parseSpreadsheet(spreadSheet, return_dataframe=True)
@@ -90,7 +95,7 @@ def get_empty_holder_dict(spreadSheet):
     return hds.set_index('holderName').to_dict()['EmptyHolderName']
                 
 def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
-                check_for_duplicate=False, configName=None,
+                check_for_duplicate=False, check_buffer=True, configName=None,
                 requiredFields=['sampleName', 'holderName', 'position'],
                 optionalFields=['volume', 'exposure', 'bufferName'],
                 autofillFields=['holderName', 'volume', 'exposure', 'EmptyHolderName'],
@@ -142,19 +147,20 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
         if str(bn)!='nan':
             sdict[hn][pos]['buffer'] = bn 
 
-    for hn,sd in sdict.items():
-        plist = list(sd.keys())
-        slist = [t['sample'] for t in sd.values()]
-        for pos,t in sd.items():
-            if slist.count(t['sample'])>1:
-                raise Exception(f"duplicate sample name {t['sample']} in {hn}")
-            if not 'buffer' in t.keys():
-                continue
-            if not t['buffer'] in slist:
-                raise Exception(f"{t['buffer']} is not a valid buffer in {hn}")
-            bpos = plist[slist.index(t['buffer'])]
-            if (bpos-pos)%2 and sbSameRow:
-                raise Exception(f"{t['sample']} and its buffer not in the same row in holder {hn}")
+    if check_buffer:
+        for hn,sd in sdict.items():
+            plist = list(sd.keys())
+            slist = [t['sample'] for t in sd.values()]
+            for pos,t in sd.items():
+                if slist.count(t['sample'])>1:
+                    raise Exception(f"duplicate sample name {t['sample']} in {hn}")
+                if not 'buffer' in t.keys():
+                    continue
+                if not t['buffer'] in slist:
+                    raise Exception(f"{t['buffer']} is not a valid buffer in {hn}")
+                bpos = plist[slist.index(t['buffer'])]
+                if (bpos-pos)%2 and sbSameRow:
+                    raise Exception(f"{t['sample']} and its buffer not in the same row in holder {hn}")
                 
     if holderName is None:  
         # the correct behavior should be the following:
@@ -193,24 +199,28 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
     return samples
 
 def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
+    """
+    check_buffer=True checks whether all necessary buffers are included in the holder, which
+        is not necessary for fixed cell measurements
+    """
     
     requiredFields = ['sampleName', 'holderName', 'position', 'EmptyHolderName']
     if check_buffer:
         requiredFields += ['bufferName'] 
     ret = {}
     
-    samples = parseHolderSpreadsheet(spreadSheet, holderName=holderName, requiredFields=requiredFields)
+    samples = parseHolderSpreadsheet(spreadSheet, holderName=holderName, 
+                                     requiredFields=requiredFields, check_buffer=check_buffer)
     sdf = pd.DataFrame.from_dict(samples).transpose()
     emptyHolderName = sdf['EmptyHolderName'][0]
-    empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName)
+    empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName, check_buffer=check_buffer)
     edf = pd.DataFrame.from_dict(empties).transpose()
     
-    if check_buffer:
-        sb_dict = {}
-        for s in samples.keys():
-            if 'bufferName' in samples[s].keys():
-                sb_dict[s] = samples[s]['bufferName']    
-        ret['buffer'] = sb_dict
+    sb_dict = {}
+    for s in samples.keys():
+        if 'bufferName' in samples[s].keys():
+            sb_dict[s] = samples[s]['bufferName']   
+    ret['buffer'] = sb_dict
         
     se_dict = {}
     all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
