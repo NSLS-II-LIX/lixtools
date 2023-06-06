@@ -387,8 +387,18 @@ class h5sol_fc(h5sol_HT):
         return d1b
     
     @h5_file_access  
-    def subtract_empty(self, samples, input_grp="averaged", debug=False):
+    def get_empty_d0(self, sn, attr, debug=False):
+        ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
+        if debug:
+            print(f'reading {attr} from .empty/{ens}/processed/attrs/', 
+                  self.fh5[f'.empty/{ens}/processed/attrs'].keys())
+        return self.fh5[f'.empty/{ens}/processed/attrs/{attr}'][...]
+    
+    @h5_file_access  
+    def subtract_empty(self, samples, input_grp="averaged", max_distance=50, debug=False):
         """ this should be based on monitor counts strictly
+            input_grp="merged": look at the data frame by frame, use self.d0s[sn]['selection'] (must exist)
+            input_grp="averaged": take the average sample data and empty data
         """
         if samples is None:
             samples = list(self.empty_list.keys())
@@ -406,8 +416,27 @@ class h5sol_fc(h5sol_HT):
             t1 = time.time()
 
         for sn in samples:
-            self.d1s[sn]['empty_subtracted'] = self.d1s[sn][input_grp].bkg_cor(self.get_empty_d1(sn, input_grp), 
-                                                                               label=f"{sn}-empty_subtracted", debug=debug)
+            d1es = self.get_empty_d1(sn, input_grp)
+            if input_grp=="averaged":
+                d1c = self.d1s[sn][input_grp].bkg_cor(d1es,  debug=debug)
+            else:
+                if not 'selection' in self.d0s[sn].keys():
+                    raise Exception(f"define selection for averaging {sn} first ...")
+                elif len(self.d0s[sn]['selection'])!=len(d1es):
+                    raise Exception(f"incorrect selection length for {sn}: {len(d1es)} vs {self.d0s[sn]['selection']}")
+                
+                d1ss = self.d1s[sn][input_grp]
+                d1cs0 = [d1ss[i].bkg_cor(d1es[i]) for i in range(len(d1ss))]                               
+                sel = filter_by_similarity(d1cs0, max_distance=max_distance, 
+                                            preselection=self.d0s[sn]['selection'], debug=debug)
+                d1cs = d1cs0[sel]
+                if len(sel)==1:
+                    d1c = d1cs[0]
+                else:
+                    d1c = d1cs[0].avg(d1cs[1:])
+                
+            d1c.label = f"{sn}-empty_subtracted"
+            self.d1s[sn]['empty_subtracted'] = d1c
 
         self.save_d1s() 
         if debug is True:
