@@ -383,7 +383,7 @@ class h5sol_fc(h5sol_HT):
             self.empty_grp = ""
         
     @h5_file_access  
-    def get_empty_d1(self, sn, input_grp="averaged"):
+    def get_empty_d1(self, sn, input_grp="averaged", debug=False):
         ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
         if debug:
             print(f'reading {attr} from {self.empty_grp}/{ens}/processed', 
@@ -449,16 +449,17 @@ class h5sol_fc(h5sol_HT):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
-    def process(self, detectors=None, update_only=False,
+    def process(self, detectors=None, rebin_data=False, update_only=False,
                 reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
                 filter_data=True, max_distance=50, selection=None, debug=False, N = 8):
         """
         subtract empty first and populate d1s[sn]['empty_subtracted']
         """
-        if filter_data=="keep":
+        if rebin_data:
+            self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
+                           save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+        else:
             self.load_d1s()
-        self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
-                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
