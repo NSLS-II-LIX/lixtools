@@ -332,6 +332,7 @@ class h5sol_fc(h5sol_HT):
         self.empty_list = {}
         self.exclude_sample_names = [grp_empty_cells]
         self.list_samples(quiet=True)
+        self.empty_grp = '.empty'
 
     def load_d1s(self, sn=None):
         super().load_d1s(sn=sn, read_attrs=['buffer', 'empty'])
@@ -370,7 +371,7 @@ class h5sol_fc(h5sol_HT):
     
         self.enable_write(False)     
     
-    def assign_empty(self, empty_dict):
+    def assign_empty(self, empty_dict, emptyFromSameHolder=False):
         """
         assign the empty cell scattering, the sn is user-specified, could come from the scan metadata
         consider saving that info during data collection
@@ -378,11 +379,16 @@ class h5sol_fc(h5sol_HT):
         for now, prepare the dictionary from the data collection spreadsheet, similar to buffer_list/sb_dict
         """        
         self.assign_sample_attr(empty_dict, "empty")
+        if emptyFromSameHolder:
+            self.empty_grp = ""
         
     @h5_file_access  
     def get_empty_d1(self, sn, input_grp="averaged"):
         ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
-        d1s,attrs = get_d1s_from_grp(self.fh5[f'.empty/{ens}/processed'], self.qgrid, ens)
+        if debug:
+            print(f'reading {attr} from {self.empty_grp}/{ens}/processed', 
+                  self.fh5[f'{self.empty_grp}/{ens}/processed/attrs'].keys())
+        d1s,attrs = get_d1s_from_grp(self.fh5[f'{self.empty_grp}/{ens}/processed'], self.qgrid, ens)
         d1b = d1s[input_grp]
         return d1b
     
@@ -390,9 +396,9 @@ class h5sol_fc(h5sol_HT):
     def get_empty_d0(self, sn, attr, debug=False):
         ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
         if debug:
-            print(f'reading {attr} from .empty/{ens}/processed/attrs/', 
-                  self.fh5[f'.empty/{ens}/processed/attrs'].keys())
-        return self.fh5[f'.empty/{ens}/processed/attrs/{attr}'][...]
+            print(f'reading {attr} from {self.empty_grp}/{ens}/processed/attrs/', 
+                  self.fh5[f'{self.empty_grp}/{ens}/processed/attrs'].keys())
+        return self.fh5[f'{self.empty_grp}/{ens}/processed/attrs/{attr}'][...]
     
     @h5_file_access  
     def subtract_empty(self, samples, input_grp="averaged", max_distance=50, debug=False):
@@ -456,7 +462,7 @@ class h5sol_fc(h5sol_HT):
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
-            self.average_d1s(update_only=update_only, filter_data=filter_data,max_distance=max_distance, selection=selection, debug=debug)
+            self.average_d1s(update_only=update_only, filter_data=filter_data, max_distance=max_distance, selection=selection, debug=debug)
         self.set_trans(trans_mode.external)
         self.subtract_empty(self.samples)
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)

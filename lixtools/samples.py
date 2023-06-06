@@ -198,7 +198,7 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
             
     return samples
 
-def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
+def get_sample_dicts(spreadSheet, holderName, emptySample=None, check_buffer=True):
     """
     check_buffer=True checks whether all necessary buffers are included in the holder, which
         is not necessary for fixed cell measurements
@@ -223,9 +223,14 @@ def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
     ret['buffer'] = sb_dict
         
     se_dict = {}
-    all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
-    for s in samples.keys():
-        se_dict[s] = edf.index[edf['position']==samples[s]['position']].values[0]
+    if emptySample: # empty cell is one of the samples, applicable when empty cell scattering is reproducible
+        if not emptySample in samples.keys():
+            raise Exception(f"{emptySample} is not a valid sample for empty cell subtraction ...")
+        se_dict = {sn:emptySample for sn in samples.keys() if sn!=emptySample}
+    else:
+        all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
+        for s in samples.keys():
+            se_dict[s] = edf.index[edf['position']==samples[s]['position']].values[0]
     ret['empty'] = se_dict
 
     return ret
