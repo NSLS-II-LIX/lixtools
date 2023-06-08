@@ -10,6 +10,251 @@ from lixtools.atsas import gen_atsas_report
 import pylab as plt
 from scipy import interpolate,integrate
 
+from lixtools.samples import get_sample_dicts,get_empty_holder_dict
+from lixtools.hdf.sol import h5sol_fc
+
+import asyncio
+from time import time
+from threading import Timer
+
+def debounce(wait):
+    """ Decorator that will postpone a function's
+        execution until after `wait` seconds
+        have elapsed since the last time it was invoked. """
+    def decorator(fn):
+        timer = None
+        def debounced(*args, **kwargs):
+            nonlocal timer
+            def call_it():
+                fn(*args, **kwargs)
+            if timer is not None:
+                timer.cancel()
+            timer = Timer(wait, call_it)
+            timer.start()
+        return debounced
+    return decorator
+
+def throttle(wait):
+    """ Decorator that prevents a function from being called
+        more than once every wait period. """
+    def decorator(fn):
+        time_of_last_call = 0
+        scheduled, timer = False, None
+        new_args, new_kwargs = None, None
+        def throttled(*args, **kwargs):
+            nonlocal new_args, new_kwargs, time_of_last_call, scheduled, timer
+            def call_it():
+                nonlocal new_args, new_kwargs, time_of_last_call, scheduled, timer
+                time_of_last_call = time()
+                fn(*new_args, **new_kwargs)
+                scheduled = False
+            time_since_last_call = time() - time_of_last_call
+            new_args, new_kwargs = args, kwargs
+            if not scheduled:
+                scheduled = True
+                new_wait = max(0, wait - time_since_last_call)
+                timer = Timer(new_wait, call_it)
+                timer.start()
+        return throttled
+    return decorator
+
+class solFCgui:
+    
+    btUpdate = ipywidgets.Button(description='update')
+    ddFileList = ipywidgets.Dropdown(description='h5 files:', layout=ipywidgets.Layout(width='90%'))
+    slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.8, max=1.2, step=0.0001,
+                                           style = {'description_width': 'initial'},
+                                           description='Scaling factor:', readout_format='.4f',
+                                           layout=ipywidgets.Layout(width='90%'))
+    ddDatakeyList = ipywidgets.Dropdown(description='datakey:')
+    vbox1 = ipywidgets.VBox([btUpdate, ddFileList, ddDatakeyList, slideScFactor], layout=ipywidgets.Layout(width='30%'))
+
+    label2 = ipywidgets.Label(value='show data:')
+    rbShowData = {}
+    rbShowData['sample'] = ipywidgets.RadioButtons(options=['sample'], layout=ipywidgets.Layout(width='90%'))
+    rbShowData['blank'] = ipywidgets.RadioButtons(options=['blank'], layout=ipywidgets.Layout(width='90%'), index=None)
+    rbShowData['empty'] = ipywidgets.RadioButtons(options=['empty'], layout=ipywidgets.Layout(width='90%'), index=None)
+    vboxSDrb = ipywidgets.VBox([rbShowData['sample'], rbShowData['blank'], rbShowData['empty']], 
+                               layout=ipywidgets.Layout(width='40%'))
+
+    samples = []
+    ddSampleList = ipywidgets.Dropdown(options=samples, layout=ipywidgets.Layout(width='90%'))
+    txBlank = ipywidgets.Text(layout=ipywidgets.Layout(width='90%'), disabled=True)
+    txEmpty = ipywidgets.Text(layout=ipywidgets.Layout(width='90%'), disabled=True)
+    vboxSDnm = ipywidgets.VBox([ddSampleList, txBlank, txEmpty], layout=ipywidgets.Layout(width='60%'))    
+
+    hboxSD = ipywidgets.HBox([vboxSDrb, vboxSDnm], layout=ipywidgets.Layout(align_items='stretch'))   
+    vbox2 = ipywidgets.VBox([label2, hboxSD], layout=ipywidgets.Layout(layout=ipywidgets.Layout(width='40%')))
+
+    smAverage = ipywidgets.SelectMultiple(description="frames:")
+    btReprocess = ipywidgets.Button(description='re-process')
+    vboxAvg = ipywidgets.VBox([smAverage, btReprocess])
+
+    box = ipywidgets.HBox([vbox1, vbox2, vboxAvg])
+    #outTxt = ipywidgets.Textarea(layout=ipywidgets.Layout(width='80%', height='50px'))
+    #box = ipywidgets.VBox([hbox1, outTxt])
+
+    dt = None
+    prev_fn = ""
+    prev_sn = None
+    prev_scf = 1
+    
+    def __init__(self, atsas_path=""):
+        self.atsas_path = atsas_path
+        if not os.path.exists("processed/"):
+            os.mkdir("processed")
+    
+    def observe(self):
+        self.ddSampleList.observe(self.onChangeSample)
+        self.ddDatakeyList.observe(self.onUpdatePlot)
+        self.slideScFactor.observe(self.onScfacrtorChanged)
+
+    def unobserve(self):
+        self.ddSampleList.unobserve(self.onChangeSample)
+        self.ddDatakeyList.unobserve(self.onUpdatePlot)
+        self.slideScFactor.unobserve(self.onScfacrtorChanged)
+    
+    def run(self, read_only=False):
+        self.read_only = read_only
+        display(self.box)
+
+        fig1 = plt.figure(figsize=(9, 6))
+        self.ax = plt.gca()
+
+        plt.ion()
+        self.btUpdate.on_click(self.updateFileList)
+        self.btReprocess.on_click(self.reprocess)
+        self.rbShowData['sample'].observe(self.onShowDataChanged)
+        self.rbShowData['blank'].observe(self.onShowDataChanged)
+        self.rbShowData['empty'].observe(self.onShowDataChanged)        
+        self.ddFileList.observe(self.onChangeDataFile)
+        self.observe()
+        
+    def onShowDataChanged(self, w):
+        if w.name!='index' or w.new is None:
+            return
+        rblist = ['sample', 'blank', 'empty']
+        rblist.remove(w.owner.value)
+        for rbn in rblist:
+            self.rbShowData[rbn].index = None
+        self.onUpdatePlot(None)
+
+    def onChangeDataFile(self, w):
+        fn = self.ddFileList.value
+        #print(f"in onChangeDataFile, {self.prev_fn} -> {fn}")
+        if fn==self.prev_fn or fn is None:
+            return
+        
+        # make sure that the data is the right type, check buffer_list and empty_list??
+        self.dt = h5sol_fc(fn)
+        self.dt.load_d1s()
+        self.samples = list(self.dt.buffer_list.keys())
+        self.ddSampleList.options = self.samples
+        self.ddSampleList.value = self.samples[0]
+        self.prev_fn = fn
+        
+    def updateFileList(self, w):
+        flist = []      
+        for fn in glob.glob("*.h5"):
+            with h5py.File(fn, "r") as fh5:
+                if 'empty_grp' in fh5.attrs:
+                    flist.append(fn)
+        
+        self.ddFileList.options = flist
+        if len(flist)>0:
+            self.ddFileList.value = flist[0]
+        else:
+            self.ddFileList.value = None
+    
+    def onChangeSample(self, w):
+        if self.dt is None:
+            return
+
+        sn = self.ddSampleList.value
+        if sn is None or sn==self.prev_sn:
+            return
+        
+        self.unobserve()
+        self.txBlank.value = self.dt.buffer_list[sn][0]
+        self.txEmpty.value = self.dt.empty_list[sn][0]
+        self.slideScFactor.value = self.dt.attrs[sn]['sc_factor']
+        self.prev_scf = self.dt.attrs[sn]['sc_factor']
+        self.observe()
+                    
+        self.prev_sn = sn
+        self.onUpdatePlot(None)
+    
+    def onUpdatePlot(self, w):
+        if self.dt is None:
+            return
+        
+        self.unobserve()
+        self.ax.clear()
+        
+        all_ks = ['averaged', 'empty_subtracted', 'subtracted']
+        sn = self.ddSampleList.value
+        bn = self.dt.buffer_list[sn][0]
+        en = self.dt.empty_list[sn][0]
+        if self.rbShowData['sample'].index is not None:
+            ks = set(self.dt.d1s[sn].keys())
+            ks = list(ks & set(all_ks))
+            sns = sn
+        elif self.rbShowData['blank'].index is not None:    
+            ks = set(self.dt.d1s[bn].keys())
+            ks = list(ks & set(all_ks))
+            sns = bn
+        elif self.rbShowData['empty'].index is not None:
+            self.dt.attrs['.empty'] = {}
+            self.dt.attrs['.empty']['selected'] = gui.dt.get_h5_attr(f'{gui.dt.empty_grp}/{ens}', 'selected')
+            self.dt.d1s['.empty'] = {}
+            self.dt.d1s['.empty']['merged'] = gui.dt.get_empty_d1('BKJ-S42', input_grp="merged")
+            self.dt.d1s['.empty']['averaged'] = gui.dt.get_empty_d1('BKJ-S42', input_grp="averaged")
+            ks = ['averaged']
+            sns = '.empty'
+        else:
+            raise Exception("none of the data type is selected ...")
+        
+        dk = self.ddDatakeyList.value
+        if self.ddDatakeyList.options!=ks:
+            if not dk in ks:
+                dk = ks[0]
+            self.ddDatakeyList.options = ks
+            self.ddDatakeyList.value = dk
+
+        self.slideScFactor.disabled = not (dk=='subtracted')
+        self.btReprocess.disabled = not (dk=='averaged')
+        if dk=='averaged':
+            nfr = len(self.dt.attrs[sns]['selected'])
+            frames = [f"frame #{i}" for i in range(nfr)]
+            self.smAverage.options = frames
+            sel = [frames[i] for i in range(nfr) if self.dt.attrs[sns]['selected'][i]]
+            self.smAverage.value = sel
+            self.dt.plot_d1s(sns, show_subtracted=False, ax=self.ax)
+        else:
+            self.dt.plot_d1s(sns, show_subtracted=dk, ax=self.ax)
+            self.smAverage.options = []
+
+        self.observe()
+            
+    def onScfacrtorChanged(self, w):
+        scf = self.slideScFactor.value
+        if np.fabs(scf-self.prev_scf)<0.001:
+            return
+        # thiis should only happen when the sample/subtracted data are displayed
+        sn = self.ddSampleList.value
+        self.dt.subtract_buffer(samples=sn, sc_factor=scf, input_grp='empty_subtracted')
+        self.prev_scf = scf
+        self.onUpdatePlot(None)
+    
+    def reprocess(self, w):
+        """ update frame selection for averaging, also update all other data that are affected
+            if empty data is shown, update all effected blank and sample
+            if blank data is shown, update all affected sample
+            if sample data is shown, update the sample itself only
+        """
+        pass
+
+
 class solHTgui:
     
     dataFileSel = ipywidgets.Dropdown(description='select data file:', layout=ipywidgets.Layout(width='45%'))
