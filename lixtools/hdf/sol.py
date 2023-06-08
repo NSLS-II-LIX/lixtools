@@ -458,8 +458,8 @@ class h5sol_fc(h5sol_HT):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
-    def process(self, detectors=None, rebin_data=False, update_only=False,
-                reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
+    def process(self, detectors=None, rebin_data=False, update_only=False, 
+                reft=-1, sc_factor=1., save_1d=False, save_merged=False, trigger="sol",
                 filter_data=True, max_distance=50, selection=None, debug=False, N = 8):
         """
         subtract empty first and populate d1s[sn]['empty_subtracted']
@@ -473,6 +473,7 @@ class h5sol_fc(h5sol_HT):
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
             self.average_d1s(update_only=update_only, filter_data=filter_data, max_distance=max_distance, selection=selection, debug=debug)
+        self.get_mon(trigger=trigger)
         self.set_trans(trans_mode.external)
         self.subtract_empty()
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
