@@ -332,7 +332,11 @@ class h5sol_fc(h5sol_HT):
         self.empty_list = {}
         self.exclude_sample_names = [grp_empty_cells]
         self.list_samples(quiet=True)
-        self.empty_grp = '.empty'
+        try:
+            self.empty_grp = self.get_h5_attr('/', 'empty_grp')
+        except:
+            self.empty_grp = '.empty'
+            self.set_h5_attr('/', 'empty_grp', self.empty_grp)
 
     def load_d1s(self, sn=None):
         super().load_d1s(sn=sn, read_attrs=['buffer', 'empty'])
@@ -381,6 +385,7 @@ class h5sol_fc(h5sol_HT):
         self.assign_sample_attr(empty_dict, "empty")
         if emptyFromSameHolder:
             self.empty_grp = ""
+        self.set_h5_attr('/', 'empty_grp', self.empty_grp)
         
     @h5_file_access  
     def get_empty_d1(self, sn, input_grp="averaged", debug=False):
@@ -401,10 +406,12 @@ class h5sol_fc(h5sol_HT):
         return self.fh5[f'{self.empty_grp}/{ens}/processed/attrs/{attr}'][...]
     
     @h5_file_access  
-    def subtract_empty(self, samples, input_grp="averaged", max_distance=50, debug=False):
+    def subtract_empty(self, samples=None, input_grp="averaged", max_distance=50, debug=False):
         """ this should be based on monitor counts strictly
             input_grp="merged": look at the data frame by frame, use self.d0s[sn]['selection'] (must exist)
             input_grp="averaged": take the average sample data and empty data
+            
+            max_distance takes effect if subtracting individual frames
         """
         if samples is None:
             samples = list(self.empty_list.keys())
@@ -422,6 +429,8 @@ class h5sol_fc(h5sol_HT):
             t1 = time.time()
 
         for sn in samples:
+            if debug:
+                print(f"empty subtraction for {sn}, using '{input_grp}' as inputs ...")
             d1es = self.get_empty_d1(sn, input_grp)
             if input_grp=="averaged":
                 d1c = self.d1s[sn][input_grp].bkg_cor(d1es,  debug=debug)
@@ -465,7 +474,7 @@ class h5sol_fc(h5sol_HT):
         else:
             self.average_d1s(update_only=update_only, filter_data=filter_data, max_distance=max_distance, selection=selection, debug=debug)
         self.set_trans(trans_mode.external)
-        self.subtract_empty(self.samples)
+        self.subtract_empty()
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
         
     def plot_d1s(self, sn, show_subtracted='empty_subtracted', **kwargs):
