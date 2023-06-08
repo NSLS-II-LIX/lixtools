@@ -272,7 +272,7 @@ class h5sol_HT(h5xs):
                 self.d1b[sn] = self.d1s[bns[0]][input_grp].avg([self.d1s[bn][input_grp] for bn in bns[1:]], 
                                                                 debug=debug)
             if sc_factor=="auto":
-                sf = "auto" #estimate_scaling_factor(self.d1s[sn][input_grp], self.d1b[sn])
+                sf = estimate_scaling_factor(self.d1s[sn][input_grp], self.d1b[sn])
                 # Data1d.bkg_cor() normalizes trans first before applying sc_factor
                 # in contrast the estimated 
                 #sf /= self.d1s[sn][input_grp].trans/self.d1b[sn].trans
@@ -472,7 +472,8 @@ class h5sol_fc(h5sol_HT):
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
-            self.average_d1s(update_only=update_only, filter_data=filter_data, max_distance=max_distance, selection=selection, debug=debug)
+            self.average_d1s(update_only=update_only, filter_data=filter_data, 
+                             max_distance=max_distance, selection=selection, debug=debug)
         self.get_mon(trigger=trigger)
         self.set_trans(trans_mode.external)
         self.subtract_empty()
