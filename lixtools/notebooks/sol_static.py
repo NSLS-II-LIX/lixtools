@@ -10,9 +10,9 @@ from lixtools.atsas import gen_atsas_report
 import pylab as plt
 from scipy import interpolate,integrate
 
-from lixtools.samples import get_sample_dicts,get_empty_holder_dict
 from lixtools.hdf.sol import h5sol_fc
 
+# these are from ipywidget docs
 import asyncio
 from time import time
 from threading import Timer
@@ -157,7 +157,10 @@ class solFCgui:
         flist = []      
         for fn in glob.glob("*.h5"):
             with h5py.File(fn, "r") as fh5:
-                if 'empty_grp' in fh5.attrs:
+                md = set(['instrument', 'run_type'])
+                if not md.issubset(fh5.attrs):
+                    continue
+                if fh5.attrs['instrument']=='LiX' and fh5.attrs['run_type']=='fixed cell':
                     flist.append(fn)
         
         self.ddFileList.options = flist
@@ -191,47 +194,47 @@ class solFCgui:
         self.unobserve()
         self.ax.clear()
         
-        all_ks = ['averaged', 'empty_subtracted', 'subtracted']
-        sn = self.ddSampleList.value
-        bn = self.dt.buffer_list[sn][0]
-        en = self.dt.empty_list[sn][0]
-        if self.rbShowData['sample'].index is not None:
-            ks = set(self.dt.d1s[sn].keys())
-            ks = list(ks & set(all_ks))
-            sns = sn
-        elif self.rbShowData['blank'].index is not None:    
-            ks = set(self.dt.d1s[bn].keys())
-            ks = list(ks & set(all_ks))
-            sns = bn
-        elif self.rbShowData['empty'].index is not None:
-            self.dt.attrs['.empty'] = {}
-            self.dt.attrs['.empty']['selected'] = gui.dt.get_h5_attr(f'{gui.dt.empty_grp}/{ens}', 'selected')
-            self.dt.d1s['.empty'] = {}
-            self.dt.d1s['.empty']['merged'] = gui.dt.get_empty_d1('BKJ-S42', input_grp="merged")
-            self.dt.d1s['.empty']['averaged'] = gui.dt.get_empty_d1('BKJ-S42', input_grp="averaged")
-            ks = ['averaged']
-            sns = '.empty'
-        else:
-            raise Exception("none of the data type is selected ...")
-        
-        dk = self.ddDatakeyList.value
-        if self.ddDatakeyList.options!=ks:
-            if not dk in ks:
-                dk = ks[0]
-            self.ddDatakeyList.options = ks
-            self.ddDatakeyList.value = dk
+        if w!='update only':
+            all_ks = ['averaged', 'empty_subtracted', 'subtracted']
+            self.sn = self.ddSampleList.value
+            self.bn = self.dt.buffer_list[self.sn][0]
+            self.en = self.dt.empty_list[self.sn][0]
+            if self.rbShowData['sample'].index is not None:
+                ks = set(self.dt.d1s[self.sn].keys())
+                ks = list(ks & set(all_ks))
+                self.sns = self.sn
+                self.dataShown = 'sample'
+            elif self.rbShowData['blank'].index is not None:    
+                ks = set(self.dt.d1s[self.bn].keys())
+                ks = list(ks & set(all_ks))
+                self.sns = self.bn
+                self.dataShown = 'blank'
+            elif self.rbShowData['empty'].index is not None:
+                ks = ['averaged']
+                self.sns = self.en
+                self.dataShown = 'empty'
+            else:
+                raise Exception("none of the data type is selected ...")
 
-        self.slideScFactor.disabled = not (dk=='subtracted')
-        self.btReprocess.disabled = not (dk=='averaged')
-        if dk=='averaged':
-            nfr = len(self.dt.attrs[sns]['selected'])
-            frames = [f"frame #{i}" for i in range(nfr)]
-            self.smAverage.options = frames
-            sel = [frames[i] for i in range(nfr) if self.dt.attrs[sns]['selected'][i]]
+            self.dk = self.ddDatakeyList.value
+            if self.ddDatakeyList.options!=ks:
+                if not self.dk in ks:
+                    self.dk = ks[0]
+                self.ddDatakeyList.options = ks
+                self.ddDatakeyList.value = self.dk
+
+            self.slideScFactor.disabled = not (self.dk=='subtracted')
+            self.btReprocess.disabled = not (self.dk=='averaged')
+
+        if self.dk=='averaged':
+            self.nfr = len(self.dt.attrs[self.sns]['selected'])
+            self.frames = [f"frame #{i}" for i in range(self.nfr)]
+            self.smAverage.options = self.frames
+            sel = [self.frames[i] for i in range(self.nfr) if self.dt.attrs[self.sns]['selected'][i]]
             self.smAverage.value = sel
-            self.dt.plot_d1s(sns, show_subtracted=False, ax=self.ax)
+            self.dt.plot_d1s(self.sns, show_subtracted=False, offset=0.7, ax=self.ax)
         else:
-            self.dt.plot_d1s(sns, show_subtracted=dk, ax=self.ax)
+            self.dt.plot_d1s(self.sns, show_subtracted=self.dk, ax=self.ax)
             self.smAverage.options = []
 
         self.observe()
@@ -252,8 +255,14 @@ class solFCgui:
             if blank data is shown, update all affected sample
             if sample data is shown, update the sample itself only
         """
-        pass
-
+        
+        selected = [(self.frames[i] in self.smAverage.value) for i in range(self.nfr)]
+        self.dt.average_d1s(samples=self.sns, selection=selected)
+        self.dt.subtract_empty()
+        self.dt.subtract_buffer(sc_factor=-1)  # keep current value
+        
+        self.onUpdatePlot("update only")
+            
 
 class solHTgui:
     

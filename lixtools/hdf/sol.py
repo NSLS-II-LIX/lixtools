@@ -155,7 +155,7 @@ class h5sol_HT(h5xs):
                 attr_list[sn] = sa_dict[sn]
         
         if debug is True:
-            print('updating buffer assignments')
+            print(f'updating {attr_name} assignments')
         if self.read_only:
             print("h5 file is read-only ...")
             return
@@ -320,29 +320,25 @@ class h5sol_HT(h5xs):
 class h5sol_fc(h5sol_HT):
     """ 
     fixed cells, each sample has a corresponding buffer, which could be from a different holder
-    each sample/buffer also has a corresponding empty cell, from a different holder
+    each sample/buffer also has a corresponding empty cell, also could be from a different holder
     new key under self.d1s[sn]: empty_subtracted
     
-    before processing starts, make soft links to the data file that contain empty cell scattering
-    assign empty cell scattering to each sample
+    before processing starts, make soft links to the data file that contain buffer/blank or empty data
+    assign empty cell and buffer/blank to each sample
+    
+    self.samples should exclude buffer/blank and empty
     
     """    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, exclude_sample_names=['.empty'], **kwargs)
         self.empty_list = {}
-        self.exclude_sample_names = [grp_empty_cells]
         self.list_samples(quiet=True)
-        try:
-            self.empty_grp = self.get_h5_attr('/', 'empty_grp')
-        except:
-            self.empty_grp = '.empty'
-            self.set_h5_attr('/', 'empty_grp', self.empty_grp)
 
     def load_d1s(self, sn=None):
         super().load_d1s(sn=sn, read_attrs=['buffer', 'empty'])
         
     @h5_file_access  
-    def link_file(self, fn, as_empty=True):
+    def link_file(self, fn):
         """ 
         this might be useful when the buffer in the same holder does not work the best
         data from a different holder can be linked here
@@ -356,55 +352,29 @@ class h5sol_fc(h5sol_HT):
         with h5py.File(fn, "r") as fh5:
             # check for redundant sample names
             new_samples = list(fh5.keys())
-            if as_empty:
-                root = grp_empty_cells
-                if not grp_empty_cells in list(self.fh5.keys()):
-                    self.fh5.create_group(grp_empty_cells)
-                    cur_samples = []
-                else:
-                    cur_samples = list(self.fh5[grp_empty_cells].keys())
-            else:
-                root = ''
-                cur_samples = self.samples
+            cur_samples = self.samples
             redundant_names = list(set(cur_samples) & set(new_samples))
             if len(redundant_names)>0:
                 print("linking not allowed, found redundant sample: ", redundant_names)
             else:
                 for sn in new_samples:
-                    self.fh5[f'{root}/{sn}'] = h5py.ExternalLink(fn, sn) #SoftLink(fh5[sn])
+                    self.fh5[f'{sn}'] = h5py.ExternalLink(fn, sn) #SoftLink(fh5[sn])
     
-        self.enable_write(False)     
+        self.enable_write(False)
+        self.list_samples(quiet=True)
     
-    def assign_empty(self, empty_dict, emptyFromSameHolder=False):
+    def assign_empty(self, empty_dict):
         """
         assign the empty cell scattering, the sn is user-specified, could come from the scan metadata
         consider saving that info during data collection
         
         for now, prepare the dictionary from the data collection spreadsheet, similar to buffer_list/sb_dict
         """        
+        missing_en = set(empty_dict.values())-set(self.samples)
+        if len(missing_en)>0:
+            raise Exception(f"missing empty data: {missing_en}")            
         self.assign_sample_attr(empty_dict, "empty")
-        if emptyFromSameHolder:
-            self.empty_grp = ""
-        self.set_h5_attr('/', 'empty_grp', self.empty_grp)
-        
-    @h5_file_access  
-    def get_empty_d1(self, sn, input_grp="averaged", debug=False):
-        ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
-        if debug:
-            print(f'reading {attr} from {self.empty_grp}/{ens}/processed', 
-                  self.fh5[f'{self.empty_grp}/{ens}/processed/attrs'].keys())
-        d1s,attrs = get_d1s_from_grp(self.fh5[f'{self.empty_grp}/{ens}/processed'], self.qgrid, ens)
-        d1b = d1s[input_grp]
-        return d1b
-    
-    @h5_file_access  
-    def get_empty_d0(self, sn, attr, debug=False):
-        ens = self.empty_list[sn][0]   # saved as a list, but there should be only one element
-        if debug:
-            print(f'reading {attr} from {self.empty_grp}/{ens}/processed/attrs/', 
-                  self.fh5[f'{self.empty_grp}/{ens}/processed/attrs'].keys())
-        return self.fh5[f'{self.empty_grp}/{ens}/processed/attrs/{attr}'][...]
-    
+            
     @h5_file_access  
     def subtract_empty(self, samples=None, input_grp="averaged", max_distance=50, debug=False):
         """ this should be based on monitor counts strictly
@@ -431,10 +401,11 @@ class h5sol_fc(h5sol_HT):
         for sn in samples:
             if debug:
                 print(f"empty subtraction for {sn}, using '{input_grp}' as inputs ...")
-            d1es = self.get_empty_d1(sn, input_grp)
+            en = self.empty_list[sn][0]
+            d1es = self.d1s[en][input_grp]
             if input_grp=="averaged":
                 d1c = self.d1s[sn][input_grp].bkg_cor(d1es,  debug=debug)
-            else:
+            else: # input_grp is 'merged'
                 if not 'selection' in self.d0s[sn].keys():
                     raise Exception(f"define selection for averaging {sn} first ...")
                 elif len(self.d0s[sn]['selection'])!=len(d1es):
@@ -479,10 +450,16 @@ class h5sol_fc(h5sol_HT):
         self.subtract_empty()
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
         
+        # this will allow the GUI to recognize the file 
+        self.set_h5_attr('/', 'run_type', 'fixed cell')
+        self.set_h5_attr('/', 'instrument', 'LiX')
+
+        
     def plot_d1s(self, sn, show_subtracted='empty_subtracted', **kwargs):
         if show_subtracted=='empty_subtracted':
             src_d1 = self.d1s[sn]['averaged']
-            bkg_d1 = self.get_empty_d1(sn)
+            en = self.empty_list[sn][0]
+            bkg_d1 = self.d1s[en]['averaged']
         elif show_subtracted=='subtracted':
             src_d1 = self.d1s[sn]['empty_subtracted']
             bn = self.buffer_list[sn][0]  # this does not accomordate multiple buffers
