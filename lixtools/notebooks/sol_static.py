@@ -259,7 +259,7 @@ class solFCgui:
         selected = [(self.frames[i] in self.smAverage.value) for i in range(self.nfr)]
         self.dt.average_d1s(samples=self.sns, selection=selected)
         self.dt.subtract_empty()
-        self.dt.subtract_buffer(sc_factor=-1)  # keep current value
+        self.dt.subtract_buffer(sc_factor='auto')  # keep current value
         
         self.onUpdatePlot("update only")
             
