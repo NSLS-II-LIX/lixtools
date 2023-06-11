@@ -84,6 +84,11 @@ def get_holders_under_config(spreadSheet, configName):
 
         return holders    
 
+def get_holder_list(spreadSheet):
+    d = parseSpreadsheet(spreadSheet, return_dataframe=True)
+    hds = d.loc[~d['holderName'].isna(), d.columns.isin(['holderName'])]['holderName']
+    return hds.to_list()  
+    
 def get_blank_holder_dict(spreadSheet):
     d = parseSpreadsheet(spreadSheet, return_dataframe=True)
     hds = d.loc[~d['BlankHolderName'].isna(), d.columns.isin(['holderName', 'BlankHolderName'])]

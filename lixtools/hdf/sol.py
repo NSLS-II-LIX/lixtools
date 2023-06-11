@@ -336,33 +336,7 @@ class h5sol_fc(h5sol_HT):
 
     def load_d1s(self, sn=None):
         super().load_d1s(sn=sn, read_attrs=['buffer', 'empty'])
-        
-    @h5_file_access  
-    def link_file(self, fn):
-        """ 
-        this might be useful when the buffer in the same holder does not work the best
-        data from a different holder can be linked here
-        all samples (top-level groups in the file) will be linked
-        
-        if as_empty is True, the external data are linked under the empty group
-        """
-        
-        self.enable_write(True)
-
-        with h5py.File(fn, "r") as fh5:
-            # check for redundant sample names
-            new_samples = list(fh5.keys())
-            cur_samples = self.samples
-            redundant_names = list(set(cur_samples) & set(new_samples))
-            if len(redundant_names)>0:
-                print("linking not allowed, found redundant sample: ", redundant_names)
-            else:
-                for sn in new_samples:
-                    self.fh5[f'{sn}'] = h5py.ExternalLink(fn, sn) #SoftLink(fh5[sn])
-    
-        self.enable_write(False)
-        self.list_samples(quiet=True)
-    
+            
     def assign_empty(self, empty_dict):
         """
         assign the empty cell scattering, the sn is user-specified, could come from the scan metadata
@@ -440,13 +414,12 @@ class h5sol_fc(h5sol_HT):
                            save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         else:
             self.load_d1s()
+        self.set_trans(trans_mode.external, trigger=trigger)
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
         else:
             self.average_d1s(update_only=update_only, filter_data=filter_data, 
                              max_distance=max_distance, selection=selection, debug=debug)
-        self.get_mon(trigger=trigger)
-        self.set_trans(trans_mode.external)
         self.subtract_empty()
         self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, input_grp='empty_subtracted', debug=debug)
         
