@@ -402,7 +402,7 @@ class h5sol_fc(h5sol_HT):
         if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
-            
+
     def process(self, detectors=None, rebin_data=False, update_only=False, 
                 reft=-1, sc_factor=1., save_1d=False, save_merged=False, trigger="sol",
                 filter_data=True, max_distance=50, selection=None, debug=False, N = 8):
@@ -411,7 +411,7 @@ class h5sol_fc(h5sol_HT):
         """
         if rebin_data:
             self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
-                           save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+                           save_d1s=False, save_merged=save_merged, debug=debug, N=N)
         else:
             self.load_d1s()
         self.set_trans(trans_mode.external, trigger=trigger)
@@ -427,7 +427,6 @@ class h5sol_fc(h5sol_HT):
         self.set_h5_attr('/', 'run_type', 'fixed cell')
         self.set_h5_attr('/', 'instrument', 'LiX')
 
-        
     def plot_d1s(self, sn, show_subtracted='empty_subtracted', **kwargs):
         if show_subtracted=='empty_subtracted':
             src_d1 = self.d1s[sn]['averaged']
