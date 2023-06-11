@@ -48,4 +48,4 @@ best solution is to fix the size of the dataset (.resize(xx, axis=0)) before pro
 
 2023Jun:
 various fixes for h5xs_scan
-h5sol_fc
+h5sol_fc and GUI
