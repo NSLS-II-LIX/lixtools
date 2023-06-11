@@ -148,7 +148,7 @@ class solFCgui:
         # make sure that the data is the right type, check buffer_list and empty_list??
         self.dt = h5sol_fc(fn)
         self.dt.load_d1s()
-        self.samples = list(self.dt.buffer_list.keys())
+        self.samples = sorted(self.dt.buffer_list.keys())
         self.ddSampleList.options = self.samples
         self.ddSampleList.value = self.samples[0]
         self.prev_fn = fn
