@@ -5,8 +5,7 @@ import re
 used_at_beamline = False
 
 def check_sample_name(sample_name, ioc_name="pil1M", sub_dir=None, 
-                      check_for_duplicate=True, check_dir=False, 
-                     ):    
+                      check_for_duplicate=True, check_dir=False):    
     """
      adapted from 04-sample.py
      when used for data collection at the beamline, 
@@ -103,7 +102,7 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
                 check_for_duplicate=False, check_buffer=True, configName=None,
                 requiredFields=['sampleName', 'holderName', 'position'],
                 optionalFields=['volume', 'exposure', 'bufferName'],
-                autofillFields=['holderName', 'volume', 'exposure', 'EmptyHolderName'],
+                autofillFields=['holderName', 'volume', 'exposure', 'EmptyHolderName', 'BlankHolderName'],
                 strFields=['sampleName', 'bufferName', 'holderName'], 
                 numFields=['volume', 'position', 'exposure'], 
                 min_load_volume=20, maxNsamples=18, sbSameRow=False):
@@ -239,3 +238,91 @@ def get_sample_dicts(spreadSheet, holderName, emptySample=None, check_buffer=Tru
     ret['empty'] = se_dict
 
     return ret
+
+## this should be identical to parseHolderSpreadsheet
+## kept in case something is missing
+def get_samples(spreadSheet, holderName, sheet_name=0,
+                check_for_duplicate=False, configName=None,
+                requiredFields=['sampleName', 'holderName', 'position'],
+                optionalFields=['volume', 'exposure', 'bufferName'],
+                autofillFields=['holderName', 'volume', 'exposure'],
+                strFields=['sampleName', 'bufferName', 'holderName'], 
+                numFields=['volume', 'position', 'exposure']):
+    d = parseSpreadsheet(spreadSheet, sheet_name, strFields)
+    tf = set(requiredFields) - set(d.keys())
+    if len(tf)>0:
+        raise Exception(f"missing fields in spreadsheet: {list(tf)}")
+    autofillSpreadsheet(d, fields=autofillFields)
+    allFields = list(set(requiredFields+optionalFields).intersection(d.keys()))
+    for f in list(set(allFields).intersection(strFields)):
+        for e in d[f].values():
+            if not isinstance(e, str):
+                if not np.isnan(e):
+                    raise Exception(f"non-string value in {f}: {e}")
+    for f in list(set(allFields).intersection(numFields)):
+        for e in d[f].values():
+            if not (isinstance(e, int) or isinstance(e, float)):
+                raise Exception(f"non-numerical value in {f}: {e}")
+            if e<=0 or np.isnan(e):
+                raise Exception(f"invalid value in {f}: {e}, possitive value required.")
+    if 'volume' in allFields:
+        if np.min(list(d['volume'].values()))<min_load_volume:
+            raise Exception(f"load volume must be greater than {min_load_volume} ul!")
+
+    # check for duplicate sample name
+    sl = list(d['sampleName'].values())
+    for ss in sl:
+        if not check_sample_name(ss, check_for_duplicate=False):
+            raise Exception(f"invalid sample name: {ss}")
+        if sl.count(ss)>1 and str(ss)!='nan':
+            idx = list(d['holderName'])
+            hl = [d['holderName'][idx[i]] for i in range(len(d['holderName'])) if d['sampleName'][idx[i]]==ss]
+            for hh in hl:
+                if hl.count(hh)>1:
+                    raise Exception(f'duplicate sample name: {ss} in holder {hh}')
+    # check for duplicate sample position within a holder
+    if holderName is None:
+        hlist = np.unique(list(d['holderName'].values()))
+    else:
+        hlist = [holderName]
+    idx = list(d['holderName'])
+    for hn in hlist:
+        plist = [d['position'][idx[i]] for i in range(len(d['holderName'])) if d['holderName'][idx[i]]==hn]
+        for pv in plist:
+            if plist.count(pv)>1:
+                raise Exception(f"duplicate sample position: {pv}")
+                
+    if holderName is None:  # validating only
+        # the correct behavior should be the following:
+        # 1. for a holder scheduled to be measured (configName given), there should not be an existing directory
+        holders = list(get_holders(spreadSheet, configName).values())
+        for hn in holders:
+            if not check_sample_name(hn, check_for_duplicate=True, check_dir=True):
+                raise Exception(f"change holder name: {hn}, already on disk." )
+        # 2. for all holders in the spreadsheet, there should not be duplicate names, however, since we are
+        #       auto_filling the holderName field, same holder name can be allowed as long as there are no
+        #       duplicate sample names. Therefore this is the same as checking for duplicate sample name,
+        #       which is already done above
+        return
+
+    # columns in the spreadsheet are dictionarys, not arrays
+    idx = list(d['holderName'])  
+    hdict = {d['position'][idx[i]]:idx[i] 
+             for i in range(len(d['holderName'])) if d['holderName'][idx[i]]==holderName}
+        
+    samples = {}
+    allFields.remove("sampleName")
+    allFields.remove("holderName")
+    for i in sorted(hdict.keys()):
+        sample = {}
+        sampleName = d['sampleName'][hdict[i]]
+        holderName = d['holderName'][hdict[i]]
+        for f in allFields:
+            sample[f] = d[f][hdict[i]]
+        if "bufferName" in sample.keys():
+            if str(sample['bufferName'])=='nan':
+                del sample['bufferName']
+        samples[sampleName] = sample
+            
+    return samples
+
