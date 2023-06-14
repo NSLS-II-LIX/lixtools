@@ -40,7 +40,7 @@ class h5xs_scan(h5xs_an):
             self.attrs[sn]['scan'] = json.loads(self.get_h5_attr(sn, 'scan'))
             
     def import_raw_data(self, fn_raw, sn=None, force_uniform_steps=True, prec=0.001, exp=1,
-                        force_synch='auto', force_synch_trig='auto', **kwargs):
+                        force_synch='auto', force_synch_trig={'em1': 'auto', 'em2': 'auto'}, **kwargs):
         """ create new group, copy header, get scan parameters, calculate q-phi map
         """
         if not isinstance(fn_raw, list):
