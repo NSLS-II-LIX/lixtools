@@ -628,7 +628,7 @@ class h5xs_an(h5xs):
                     data.append(dd2)
             self.add_proc_data(sn, 'qphi', 'merged', data)
 
-    def export_data(self, fn):
+    def export_data(self, fn, data_keys=None, path='.'):
         """ export all data under "overall" if there are multiple samples
         """
         if len(self.h5xs)==1:
@@ -638,9 +638,10 @@ class h5xs_an(h5xs):
         else:
             sn = "overall"
         
-        fh5 = h5py.File(fn, "w-")  # fail if the file exists
-        dks = self.proc_data[sn].keys()
-        for data_key in dks:
+        fh5 = h5py.File(f"{path}/{fn}", "w-")  # fail if the file exists
+        if data_keys is None:
+            data_keys = self.proc_data[sn].keys()
+        for data_key in data_keys:
             sks = self.proc_data[sn][data_key].keys()
             for sub_key in sks:
                 print(f"{sn}, {data_key}, {sub_key}        \r", end="")
