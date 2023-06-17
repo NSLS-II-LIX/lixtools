@@ -651,7 +651,7 @@ class h5xs_an(h5xs):
     def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None, quiet=False):
         print("saving processed data ...")
         if save_sns is None:
-            save_sns = list(self.fh5.keys())
+            save_sns = self.samples
             if "overall" in self.proc_data.keys():
                 save_sns += ["overall"]
         elif not isinstance(save_sns, list):
