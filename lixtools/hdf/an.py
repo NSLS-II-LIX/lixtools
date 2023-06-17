@@ -204,7 +204,7 @@ class h5xs_an(h5xs):
         fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
             h5py.File(fn, 'w').close()
-        super().__init__(*args, have_raw_data=False, **kwargs)
+        super().__init__(*args, have_raw_data=False, exclude_sample_names=['overall'], **kwargs)
         self.proc_data = {}
         self.h5xs = {}
         self.raw_data = {}
