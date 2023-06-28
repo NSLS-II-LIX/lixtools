@@ -12,7 +12,7 @@ from IPython.display import display,clear_output
 import webbrowser,qrcode,base64,threading
 from collections import Counter,OrderedDict
 
-from lixtools.samples import parseHolderSpreadsheet
+from lixtools.samples import parseHolderSpreadsheet,check_sample_name
 
 USE_SHORT_QR_CODE=False
 
