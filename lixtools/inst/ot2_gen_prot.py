@@ -112,7 +112,7 @@ def read_OT2_layout2(plate_slots, holder_slots, retry=3,
             ret = read_code(cam, "3QR", ps)
             if len(ret.keys())==3:
                 break
-        for hidx in ['a', 'b', 'c']:
+        for hidx in ['A', 'B', 'C']:
             if hidx in ret.keys():
                 hdict[ret[hidx]] = {"slot": ps, "holder": hidx}
         print(ps, ret)        
