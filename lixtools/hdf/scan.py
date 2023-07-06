@@ -195,7 +195,7 @@ class h5xs_scan(h5xs_an):
                 self.proc_data[sname]['maps'][an].d /= trans
 
         if 'absorption' in attr_names:
-            if not ref_int_map in self.proc_data['overall']['maps'].keys():
+            if not ref_int_map in self.proc_data[sname]['maps'].keys():
                 raise Exception(f"cannot find ref_int_map: {ref_int_map}")
             d = self.proc_data[sname]['maps'][ref_int_map].d
             h,b = np.histogram(d[~np.isnan(d)], bins=100)
