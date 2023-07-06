@@ -195,7 +195,7 @@ class h5xs_scan(h5xs_an):
                 self.proc_data[sname]['maps'][an].d /= trans
 
         if 'absorption' in attr_names:
-            if not ref_int_map in self.proc_data['overall']['maps'].keys():
+            if not ref_int_map in self.proc_data[sname]['maps'].keys():
                 raise Exception(f"cannot find ref_int_map: {ref_int_map}")
             d = self.proc_data[sname]['maps'][ref_int_map].d
             h,b = np.histogram(d[~np.isnan(d)], bins=100)
@@ -209,7 +209,7 @@ class h5xs_scan(h5xs_an):
         if debug: print()
         self.save_data(save_sns=[sname], save_data_keys=["maps"], quiet=(not debug))
         
-    def calc_tomo_from_map(self, attr_names, debug=True, **kwargs):
+    def calc_tomo_from_map(self, attr_names, map_data_key='maps', tomo_data_key='tomo', debug=True, **kwargs):
         """ attr_names can be a string or a list
             ref_int_map is used to figure out where tranmission value should be 1
         """
@@ -221,33 +221,33 @@ class h5xs_scan(h5xs_an):
         if isinstance(attr_names, str):
             attr_names = [attr_names]
             
-        if not "tomo" in self.proc_data[sn]:
-            self.proc_data[sn]['tomo'] = {}
+        if not tomo_data_key in self.proc_data[sn]:
+            self.proc_data[sn][tomo_data_key] = {}
             
         pool = mp.Pool(len(attr_names))
         jobs = []
         for an in attr_names:
             if debug:
                 print(f"processing {sn}, {an}           \r", end="")
-            mm = self.proc_data[sn]['maps'][an]
+            mm = self.proc_data[sn][map_data_key][an]
             tm = mm.copy()
             tm.yc = tm.xc
             tm.xc_label = "x"
             tm.yc_label = "y"
-            self.proc_data[sn]['tomo'][an] = tm
+            self.proc_data[sn][tomo_data_key][an] = tm
             jobs.append(pool.map_async(calc_tomo, [(an, mm, kwargs)]))
         
         pool.close()
         for job in jobs:
             an,data = job.get()[0]
-            self.proc_data[sn]['tomo'][an].d = data
+            self.proc_data[sn][tomo_data_key][an].d = data
             if debug:
                 print(f"data received for {an}                \r", end="")
         pool.join()
             
         if debug:
             print(f"saving data                         ")        
-        self.save_data(save_sns=sn, save_data_keys=["tomo"], quiet=(not debug))
+        self.save_data(save_sns=sn, save_data_keys=[tomo_data_key], quiet=(not debug))
 
 def gen_scan_report(fn, client=None):
     dn = os.path.dirname(fn)

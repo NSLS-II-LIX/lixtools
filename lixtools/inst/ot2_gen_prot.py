@@ -1,7 +1,11 @@
 import sys,os,getopt,socket,time
+import pathlib,threading,subprocess,json
 import pandas as pd
 import numpy as np
+from collections import OrderedDict
 from itertools import groupby,chain
+from lixtools.mailin import validate_sample_list
+from lixtools.inst.webcam import webcam
 
 class sock_client:
     def __init__(self, sock_addr, persistent=True):
