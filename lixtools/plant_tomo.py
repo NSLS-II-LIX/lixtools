@@ -15,6 +15,7 @@ import os,glob,time,PIL
 import scipy
 from scipy.signal import butter,filtfilt
 from scipy.ndimage import gaussian_filter
+from skimage.restoration import rolling_ball
 
 from sklearn.utils.extmath import randomized_svd
 from sklearn.decomposition import NMF
@@ -39,6 +40,16 @@ def remove_zingers(data, filt=[2, 1.5], thresh=4, thresh_abs=0.1):
     
     return mmd2
 
+def remove_zingers_1d(q, I, q0=0.15, radius=3000):
+    """ expect the data to have high intensity at low xx
+        large radius value seems necessary
+        alternatively, use small radius, but perform rolling ball on log(I)
+    """
+    I1 = np.copy(I)
+    I1[q>q0] = rolling_ball(I[q>q0], radius=radius)
+    
+    return I1
+
 def scf(q, q0=0.08, ex=2):
     sc = 1./(np.power(q, -ex)+1./q0)
     return sc
@@ -57,7 +68,7 @@ def plot_data(data, q, skip=237, ax=None, logScale=True):
         ax.set_yscale("log")
     
     
-def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], dezinger=True):
+def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], dezinger='1d'):
     """ 
     """        
     mm = []
@@ -65,9 +76,11 @@ def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], dezinger=True):
         for i in range(len(dt.proc_data[sn]['qphi']['merged'])):
             dm = dt.proc_data[sn]['qphi']['merged'][i].apply_symmetry()
             dm.d = dm.d*scf(dm.xc, q0=q0, ex=ex)
-            if dezinger:
+            if dezinger=='2d':
                 dm.d = remove_zingers(dm.d)
             q,dd,ee = dm.line_profile(direction="x", xrange=q_range)
+            if dezinger=='1d':
+                dd = remove_zingers_1d(q, dd)
             mm.append(dd)
         # temporary fix to pad zeros for the missing SAXS/merged data
         for i in range(len(dt.proc_data[sn]['attrs']['transmitted'])-len(dt.proc_data[sn]['qphi']['merged'])):
@@ -79,7 +92,7 @@ def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], dezinger=True):
     dt.proc_data[sn]["Iq"]['merged'] = np.vstack(mm)
     dt.save_data(save_sns=sn, save_data_keys="Iq", save_sub_keys="merged")
     dt.set_h5_attr("overall/Iq/merged", "qgrid", q) 
-
+    
     
 def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], bkg_thresh=None, mask=None):
     """ bkg_thresh
