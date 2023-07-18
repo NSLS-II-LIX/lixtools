@@ -59,11 +59,42 @@ class h5xs_scan(h5xs_an):
                 self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
                              force_synch=force_synch, force_synch_trig=force_synch_trig)    
                 
-    def get_attr_from_map(self, sn, map_name, quiet=True):
+    def get_index_from_map_coords(self, sn, xc, yc, map_name=None, map_data_key='maps'):
+        """ sn of "overall" should be dealt with separately
+        """
+        if sn=="overall":
+            raise Exception("not yet implemented for overall")
+        elif not sn in self.samples:
+            raise Exception(f"invalid sample name: {sn}")
+        if map_name is None: # all maps under the map_data_key should share the same coordinates
+            map_name = list(self.proc_data[sn][map_data_key].keys())[0]
+            
+        mm = self.proc_data[sn][map_data_key][map_name]
+        im = mm.copy()
+        im.d = np.arange(len(mm.xc)*len(mm.yc)).reshape(mm.d.shape)    
+        if self.attrs[sn]['scan']['snaking']:
+            for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
+                im.d[i] = np.flip(im.d[i])
+        
+        xb = (im.xc[1:]+im.xc[:-1])/2
+        yb = (im.yc[1:]+im.yc[:-1])/2
+        if xc>xb[-1]:
+            ix = -1
+        else:
+            ix = np.where(xb>=xc)[0][0]
+        if yc>yb[-1]:
+            iy = -1
+        else:
+            iy = np.where(yb>=yc)[0][0]
+        
+        return im.d[iy,ix]
+        
+                
+    def get_attr_from_map(self, sn, map_name, map_data_key='maps', quiet=True):
         """ it is sometimes necessary to translate a 2D map into a 1D array, so that the index of the array
             can match the index of the 2D scattering data
         """
-        m = np.copy(self.proc_data[sn]['maps'][map_name].d)
+        m = np.copy(self.proc_data[sn][map_data_key][map_name].d)
         if self.attrs[sn]['scan']['snaking']:
             if not quiet:
                 print(f"re-snaking {sn}, {map_name}      \r", end="")
@@ -109,7 +140,7 @@ class h5xs_scan(h5xs_an):
         #self.proc_data['overall']['maps'][an] = mm
         return mm
     
-    def make_map_from_attr(self, sname="overall", attr_names="transmission", 
+    def make_map_from_attr(self, sname="overall", map_data_key='maps', attr_names="transmission", 
                            ref_int_map="int_saxs", correct_for_transsmission=True, recalc_trans_map=True,
                            debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
@@ -122,6 +153,8 @@ class h5xs_scan(h5xs_an):
             this seems not necessary to produce maps for individual files if there are more than one
             
             attr_names can be a string or a list
+            
+            ref_int_map is needed as a reference for zero absorption
         """
 
         if sname=="overall":
@@ -166,48 +199,48 @@ class h5xs_scan(h5xs_an):
                     #print(f"de-snaking {sn}, {an}      \r", end="")
                     for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
                         m.d[i] = np.flip(m.d[i])
-                if "maps" not in self.proc_data[sn].keys():
-                    self.proc_data[sn]['maps'] = {}
+                if map_data_key not in self.proc_data[sn].keys():
+                    self.proc_data[sn][map_data_key] = {}
                 maps.append(m)
-                self.proc_data[sn]['maps'][an] = m
+                self.proc_data[sn][map_data_key][an] = m
 
             # assume the scans are of the same type, therefore start from the same direction
             if sname=="overall":
                 mm = maps[0].merge(maps[1:])
                 if "overall" not in self.proc_data.keys():
                     self.proc_data['overall'] = {}
-                    self.proc_data['overall']['maps'] = {}
-                self.proc_data['overall']['maps'][an] = mm
+                    self.proc_data['overall'][map_data_key] = {}
+                self.proc_data['overall'][map_data_key][an] = mm
         
         # this should correct for transmitted intensity rather than for transmission
         # sometimes the beam can be off for part of the scan, that part of the data should not be corrected
-        trans = np.copy(self.proc_data[sname]['maps']["transmitted"].d)
+        trans = np.copy(self.proc_data[sname][map_data_key]["transmitted"].d)
         idx = (trans<np.average(trans)/4)
         trans[idx] /= np.average(~idx)
         trans[~idx] = 1
         if correct_for_transsmission:  
             for an in attr_names:
-                if an in ["transmission", "absorption", "transmitted"]:
+                if an in ["incident", "transmission", "absorption", "transmitted"]:
                     continue
                 if debug:
                     print(f"transmmision correction: {sname}, {an}      \r", end="")
-                #self.proc_data[sname]['maps'][an].d /= self.proc_data[sname]['maps']["transmission"].d
-                self.proc_data[sname]['maps'][an].d /= trans
+                #self.proc_data[sname][map_data_key][an].d /= self.proc_data[sname][map_data_key]["transmission"].d
+                self.proc_data[sname][map_data_key][an].d /= trans
 
         if 'absorption' in attr_names:
-            if not ref_int_map in self.proc_data[sname]['maps'].keys():
+            if not ref_int_map in self.proc_data[sname][map_data_key].keys():
                 raise Exception(f"cannot find ref_int_map: {ref_int_map}")
-            d = self.proc_data[sname]['maps'][ref_int_map].d
+            d = self.proc_data[sname][map_data_key][ref_int_map].d
             h,b = np.histogram(d[~np.isnan(d)], bins=100)
             vbkg = (b[0]+b[1])/2
-            mm = self.proc_data[sname]['maps']['transmission'].copy()
-            t1 = np.average(mm.d[self.proc_data[sname]['maps'][ref_int_map].d<vbkg])
+            mm = self.proc_data[sname][map_data_key]['transmission'].copy()
+            t1 = np.average(mm.d[self.proc_data[sname][map_data_key][ref_int_map].d<vbkg])
             mm.d = -np.log(mm.d/t1)
             mm.d[mm.d<0] = 0
-            self.proc_data[sname]['maps']['absorption'] = mm
+            self.proc_data[sname][map_data_key]['absorption'] = mm
         
         if debug: print()
-        self.save_data(save_sns=[sname], save_data_keys=["maps"], quiet=(not debug))
+        self.save_data(save_sns=[sname], save_data_keys=[map_data_key], quiet=(not debug))
         
     def calc_tomo_from_map(self, attr_names, map_data_key='maps', tomo_data_key='tomo', debug=True, **kwargs):
         """ attr_names can be a string or a list
