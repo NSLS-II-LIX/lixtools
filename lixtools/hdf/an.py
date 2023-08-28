@@ -654,7 +654,7 @@ class h5xs_an(h5xs):
         if save_sns is None:
             save_sns = self.samples
             if "overall" in self.proc_data.keys():
-                save_sns += ["overall"]
+                save_sns = self.samples+["overall"]
         elif not isinstance(save_sns, list):
             save_sns = [save_sns]
             
