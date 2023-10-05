@@ -228,14 +228,14 @@ class h5sol_HT(h5xs):
             self.save_d1s(sn, debug=debug)
         
     def process(self, detectors=None, update_only=False,
-                reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
+                reft=-1, sc_factor=1., save_merged=False, 
                 filter_data=True, selection=None, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
         if filter_data=="keep":
             self.load_d1s()
         self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
-                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+                       save_merged=save_merged, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
@@ -404,7 +404,7 @@ class h5sol_fc(h5sol_HT):
             print("done, time lapsed: %.2f sec" % (t2-t1))
 
     def process(self, detectors=None, rebin_data=False, update_only=False, 
-                reft=-1, sc_factor=1., save_1d=False, save_merged=False, trigger="sol",
+                reft=-1, sc_factor=1., save_merged=False, trigger="sol",
                 filter_data=True, max_distance=50, selection=None, debug=False, N = 8):
         """
         subtract empty first and populate d1s[sn]['empty_subtracted']

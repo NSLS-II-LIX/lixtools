@@ -74,13 +74,13 @@ class h5sol_HPLC(h5xs):
             d1.scale(ref_trans/d1.trans)
         
     def process(self, update_only=False, ext_trans=False,
-                reft=-1, save_1d=False, save_merged=False, 
+                reft=-1, save_merged=False, 
                 filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
         """
 
         self.load_data(update_only=update_only, reft=reft, 
-                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
+                       save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
         
         # This should account for any beam intensity fluctuation during the HPLC run. While
         # typically for solution scattering the water peak intensity is relied upon for normalization,
