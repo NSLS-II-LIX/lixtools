@@ -153,15 +153,19 @@ def proc_merge1d(args):
     return [sn, ret[''], ret['e']]
 
 def proc_merge2d(args):
-    fn,img_grps,sn,debug,parms,bin_ranges = args
+    #fn,img_grps,sn,debug,parms,bin_ranges = args
+    fn,img_grps,sn,frns,debug,parms,bin_ranges = args
+    nframes = len(frns)
     
+    #if debug:
+    #    print(img_grps,sn,frns,nframes)
     fh5 = h5py.File(fn, "r", swmr=True)
     if debug is True:
         print(f"processing started: {sn}            \r", end="")
 
     s = fh5[img_grps[0]].shape
-    nframes = len(np.ones(s[:-2]).flatten())
-    frns = np.arange(nframes, dtype=int).reshape(s[:-2])
+    #nframes = len(np.ones(s[:-2]).flatten())
+    #frns = np.arange(nframes, dtype=int).reshape(s[:-2])
     dQ,dPhi,dMask,dQPhiMask,dWeight = parms
     ndet = len(dQ)
     
@@ -171,14 +175,16 @@ def proc_merge2d(args):
     q_bin_ranges,q_N,phi_range,phi_N = bin_ranges       
     ret = np.zeros(shape=(nframes, phi_N, q_N))
     
+    frn0 = frns[0]
     for i in range(ndet):
         data = fh5[img_grps[i]]
-        for idx,n in np.ndenumerate(frns):
-        # there should be no overlap between SAXS and WAXS, not physically possible
+        for n in range(nframes):
+            # there should be no overlap between SAXS and WAXS, not physically possible
+            idx = n+frn0
             if n%500==0 and debug:
                 print(f"- {img_grps[i]}, {idx}            \r", end="")
             mm = np.vstack([fh.histogram2d(dQ[i], dPhi[i], bins=(qN, phi_N), range=[qrange, phi_range], 
-                                           weights=data[idx][dMask[i]]) for qrange,qN in q_bin_ranges]).T
+                                           weights=data[n+frn0][dMask[i]]) for qrange,qN in q_bin_ranges]).T
             mm[dQPhiMask[i]]/=dWeight[i][dQPhiMask[i]]
             ret[n][mm>0] = mm[mm>0]
 
@@ -188,7 +194,8 @@ def proc_merge2d(args):
         print(f"processing completed: {sn}               \r", end="")
         
     fh5.close()
-    return [sn, ret]
+    #return [sn, ret]
+    return [sn, frn0, ret]
 
 def proc_merge2d0(args):
     images,sn,starting_frame_cnt,debug,parms,bin_ranges = args
@@ -414,10 +421,11 @@ class h5xs_an(h5xs):
         if self.pre_proc=="1D":
             self.process1d(N, max_c_size, debug)
         elif self.pre_proc=="2D":
-            if len(self.h5xs)>N/2: # one process per sample
-                self.process2d(N, max_c_size, debug)
-            else: # single sample, split data 
-                self.process2d0(N, max_c_size, debug)
+            #if len(self.h5xs)>N/2: # one process per sample
+            #    self.process2d(N, max_c_size, debug)
+            #else: # single sample, split data 
+            #    self.process2d0(N, max_c_size, debug)
+            self.process2d(N, max_c_size, debug)
         else:
             raise Exception(f"cannot deal with pre_proc = {self.pre_proc}")
 
@@ -599,34 +607,46 @@ class h5xs_an(h5xs):
         # for corrections: polarization and solid angle 
         #QPhiCorF = np.ones_like()
 
-        N = np.min([N, len(self.h5xs)])        
+        #N = np.min([N, len(self.h5xs)])        
         pool = mp.Pool(N)
         jobs = []
         results = {}   # scanning data sets are too large, process one sample at a time
         for sn,dh5 in self.h5xs.items():
+            # max_c_size to limit mamory use, need to pass on nframes and frns to proc_merge2d
+            # original definition: 
+            #nframes = len(np.ones(s[:-2]).flatten())
+            #frns = np.arange(nframes, dtype=int).reshape(s[:-2])
+            s = dh5.dshape(dh5.det_name[detectors[0].extension])
+            if len(s)!=3:
+                raise Exception("don't know how to handle shape: ", s)
+            results[sn] = {}
             img_grps = [dh5.dset(dh5.det_name[det.extension], get_path=True, sn=sn) for det in detectors]
-            
-            job = pool.map_async(proc_merge2d, [(dh5.fn, img_grps, sn, debug, parms, bin_ranges)])  
-            jobs.append(job)
+            for frn_start in range(0, s[0], max_c_size):
+                frn_stop = min(frn_start+max_c_size, s[0])
+                frns = range(frn_start, frn_stop)
+                job = pool.map_async(proc_merge2d, [(dh5.fn, img_grps, sn, frns, debug, parms, bin_ranges)])  
+                jobs.append(job)
                 
         pool.close()
         for job in jobs:
-            [sn, data] = job.get()[0]
-            results[sn] = data
+            #[sn, data] = job.get()[0]
+            [sn, frn0, data] = job.get()[0]
+            results[sn][frn0] = data
             print(f"data received: sn={sn}                \r", end="")
         pool.join()
 
         for sn in results.keys():
             data = []
-            for i in range(len(results[sn])):
-                dd2 = MatrixWithCoords()
-                dd2.xc = qgrid
-                dd2.xc_label = "q"
-                dd2.yc = phigrid
-                dd2.yc_label = "phi"
-                dd2.d = results[sn][i]
-                dd2.err = None
-                data.append(dd2)
+            for frn0 in sorted(results[sn].keys()):
+                for i in range(len(results[sn][frn0])):
+                    dd2 = MatrixWithCoords()
+                    dd2.xc = qgrid
+                    dd2.xc_label = "q"
+                    dd2.yc = phigrid
+                    dd2.yc_label = "phi"
+                    dd2.d = results[sn][frn0][i]
+                    dd2.err = None
+                    data.append(dd2)
             self.add_proc_data(sn, 'qphi', 'merged', data)            
             
             
