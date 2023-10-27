@@ -68,37 +68,46 @@ def plot_data(data, q, skip=237, ax=None, logScale=True):
         ax.set_yscale("log")
     
     
-def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], dezinger='1d'):
+def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", phi_range=None, dezinger='1d', trans_cor=True):
     """ 
     """        
     mm = []
     for sn in dt.samples:
+        if len(dt.proc_data[sn]['attrs']['transmitted'])!=len(dt.proc_data[sn]['qphi']['merged']):
+            raise Exception("incorrect phi data size ...")
+
         for i in range(len(dt.proc_data[sn]['qphi']['merged'])):
             dm = dt.proc_data[sn]['qphi']['merged'][i].apply_symmetry()
             dm.d = dm.d*scf(dm.xc, q0=q0, ex=ex)
             if dezinger=='2d':
                 dm.d = remove_zingers(dm.d)
-            q,dd,ee = dm.line_profile(direction="x", xrange=q_range)
+            q,dd,ee = dm.line_profile(direction="x", xrange=q_range, yrange=phi_range)
             if dezinger=='1d':
                 dd = remove_zingers_1d(q, dd)
-            mm.append(dd)
+            mm.append(dd)                                        
         # temporary fix to pad zeros for the missing SAXS/merged data
-        for i in range(len(dt.proc_data[sn]['attrs']['transmitted'])-len(dt.proc_data[sn]['qphi']['merged'])):
-            mm.append(np.zeros_like(dd))
+        #for i in range(len(dt.proc_data[sn]['attrs']['transmitted'])-len(dt.proc_data[sn]['qphi']['merged'])):
+        #    mm.append(np.zeros_like(dd))
 
     sn = 'overall'
-    if not "Iq" in dt.proc_data[sn].keys():
-        dt.proc_data[sn]["Iq"] = {}
-    dt.proc_data[sn]["Iq"]['merged'] = np.vstack(mm)
-    dt.save_data(save_sns=sn, save_data_keys="Iq", save_sub_keys="merged")
-    dt.set_h5_attr("overall/Iq/merged", "qgrid", q) 
+    nm = f"Iq{ext}"
+    if not nm in dt.proc_data[sn].keys():
+        dt.proc_data[sn][nm] = {}
+    data = np.vstack(mm)
+    if trans_cor:
+        trans = np.hstack([dt.proc_data[sn]['attrs']['transmitted'] for sn in dt.samples])
+        trans/=np.average(trans)
+        data = (data.T/trans).T        
+    dt.proc_data[sn][nm]['merged'] = data
+    dt.save_data(save_sns=sn, save_data_keys=nm, save_sub_keys="merged")
+    dt.set_h5_attr(f"overall/{nm}/merged", "qgrid", q) 
     
     
-def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], bkg_thresh=None, mask=None):
+def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None):
     """ bkg_thresh
     """
-    data = dt.proc_data['overall']["Iq"]['merged']
-    xcor = dt.get_h5_attr("overall/Iq/merged", 'qgrid')
+    data = dt.proc_data['overall'][f"Iq{ext}"]['merged']
+    xcor = dt.get_h5_attr(f"overall/Iq{ext}/merged", 'qgrid')
     xidx = ((xcor>bkg_x_range[0]) & (xcor<bkg_x_range[1]))
     if bkg_thresh is None:
         dd1 = np.average(data[:, xidx], axis=1)
@@ -123,12 +132,12 @@ def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], bkg_thresh=None, mask=None):
     idx = (np.sum(mm[:, 200:300], axis=1)<0.01)  # to exlude the data that are missing WAXS patterns
     mm[idx,:] = 0                                # set to zero values, no need to track which ones are excluded
     
-    dt.proc_data['overall']["Iq"]['subtracted'] = np.vstack(mm)
-    dt.save_data(save_sns='overall', save_data_keys="Iq", save_sub_keys="subtracted")
-    dt.set_h5_attr("overall/Iq/subtracted", "qgrid", xcor) 
-    dt.set_h5_attr("overall/Iq/merged", "bkg", bkg) 
+    dt.proc_data['overall'][f"Iq{ext}"]['subtracted'] = np.vstack(mm)
+    dt.save_data(save_sns='overall', save_data_keys=f"Iq{ext}", save_sub_keys="subtracted")
+    dt.set_h5_attr(f"overall/Iq{ext}/subtracted", "qgrid", xcor) 
+    dt.set_h5_attr(f"overall/Iq{ext}/merged", "bkg", bkg) 
         
-def get_phi_data(dt, phi_range=[0.01, 2.5], bkg_thresh=0.6e-2, dezinger=True):
+def get_phi_data(dt, q_range=[0.01, 2.5], ext="", bkg_thresh=0.6e-2, dezinger=True, trans_cor=True):
     """ 
     """
     mm = []
@@ -138,23 +147,29 @@ def get_phi_data(dt, phi_range=[0.01, 2.5], bkg_thresh=0.6e-2, dezinger=True):
             dm = dt.proc_data[sn]['qphi']['merged'][i].apply_symmetry()
             if dezinger:
                 dm.d = remove_zingers(dm.d)
-            phi,dd,ee = dm.line_profile(direction="y", xrange=phi_range)
+            phi,dd,ee = dm.line_profile(direction="y", xrange=q_range)
             mm.append(dd)
             if np.max(dd)<bkg_thresh:
                 mmb.append(dd)
     
     sn = 'overall'
-    if not "Iphi" in dt.proc_data[sn].keys():
-        dt.proc_data[sn]["Iphi"] = {}
-    dt.proc_data[sn]["Iphi"]['merged'] = np.vstack(mm)
-    dt.save_data(save_sns=sn, save_data_keys="Iphi", save_sub_keys="merged")
-    dt.set_h5_attr("overall/Iphi/merged", "phigrid", phi) 
+    nm = f"Iphi{ext}"
+    if not nm in dt.proc_data[sn].keys():
+        dt.proc_data[sn][nm] = {}
+    data = np.vstack(mm)
+    if trans_cor:
+        trans = np.hstack([dt.proc_data[sn]['attrs']['transmitted'] for sn in dt.samples])
+        trans/=np.average(trans)
+        data = (data.T/trans).T    
+    dt.proc_data[sn][nm]['merged'] = data
+    dt.save_data(save_sns=sn, save_data_keys=nm, save_sub_keys="merged")
+    dt.set_h5_attr(f"overall/{nm}/merged", "phigrid", phi) 
 
-def sub_bkg_phi(dt, bkg_x_range=[70, 110], bkg_thresh=None, mask=None):
+def sub_bkg_phi(dt, bkg_x_range=[70, 110], ext="", bkg_thresh=None, mask=None):
     """ bkg_thresh
     """
-    data = dt.proc_data['overall']["Iphi"]['merged']
-    xcor = dt.get_h5_attr("overall/Iphi/merged", 'phigrid')
+    data = dt.proc_data['overall'][f"Iphi{ext}"]['merged']
+    xcor = dt.get_h5_attr(f"overall/Iphi{ext}/merged", 'phigrid')
     xidx = ((xcor>bkg_x_range[0]) & (xcor<bkg_x_range[1]))
     if bkg_thresh is None:
         dd1 = np.average(data[:, xidx], axis=1)
@@ -176,10 +191,10 @@ def sub_bkg_phi(dt, bkg_x_range=[70, 110], bkg_thresh=None, mask=None):
     mm = data-bkg
     mm[mm<0] = 0
 
-    dt.proc_data['overall']["Iphi"]['subtracted'] = np.vstack(mm)
-    dt.save_data(save_sns='overall', save_data_keys="Iphi", save_sub_keys="subtracted")
-    dt.set_h5_attr("overall/Iphi/subtracted", "phigrid", xcor) 
-    dt.set_h5_attr("overall/Iphi/merged", "bkg", bkg) 
+    dt.proc_data['overall'][f"Iphi{ext}"]['subtracted'] = np.vstack(mm)
+    dt.save_data(save_sns='overall', save_data_keys=f"Iphi{ext}", save_sub_keys="subtracted")
+    dt.set_h5_attr(f"overall/Iphi{ext}/subtracted", "phigrid", xcor) 
+    dt.set_h5_attr(f"overall/Iphi{ext}/merged", "bkg", bkg) 
         
 
 def estimate_Nc(x, mm, N=20, offset=0.1):
@@ -298,16 +313,17 @@ def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, 
 def make_maps_from_Iq(dts, 
                       q_list={"int_cellulose": [1.05, 1.15], "int_amorphous": [1.25, 1.35], "int_saxs": [0.05, 0.2]},
                       template_grp="transmission", abs_cor=False, quiet=True): 
-
+    sks = list(q_list.keys())
     for dt in dts:       
         dt.load_data(read_data_keys=["attrs"], quiet=quiet)
         q = dt.get_h5_attr("overall/Iq/subtracted", 'qgrid')
         Iq = dt.proc_data['overall']['Iq']['subtracted']
-        for k in q_list.keys():
+        for k in sks:
             idx = ((q>=q_list[k][0]) & (q<=q_list[k][1]))
             attr = np.sum(Iq[:,idx], axis=1)
             make_map_from_overall_attr(dt, attr, template_grp=template_grp, 
                                        map_name=k, correct_for_transsmission=abs_cor)
+        dt.save_data(save_sns="overall", save_data_keys="maps", save_sub_keys=sks, quiet=True)
             
 def scale_transmitted_maps(dt, sc=170000, quiet=True):
     if 'transmitted' not in dt.proc_data['overall']['maps'].keys():
