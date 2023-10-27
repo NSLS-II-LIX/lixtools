@@ -404,11 +404,17 @@ class h5xs_an(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
-    def extract_attr(self, sn, attr_name, func, data_key, sub_key, N=8, check_size=0, **kwargs):
+    def extract_attr(self, sn, attr_name, func, data_key, sub_key, from_raw_data=False,
+                     N=8, check_size=0, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
             and source of the data (data_key/sub_key)
         """
-        data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
+        if from_raw_data:
+            self.h5xs[sn].explicit_open_h5()
+            data = [func(d, **kwargs) for d in self.h5xs[sn].fh5[sn][data_key][sub_key]]
+            self.h5xs[sn].explicit_close_h5()
+        else:
+            data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
         if check_size>0:
             data = np.pad(data, (0,check_size-len(data)), constant_values=np.nan)
         self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
