@@ -292,6 +292,61 @@ class h5sol_HT(h5xs):
         if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
+            
+    def buffer_subtract_conc_series(self, samples, ref_sample, qrange=[0.2, 1.5], 
+                                    debug=False, plot_data=False, ax=None):
+        ref_data = self.d1s[ref_sample]['subtracted']
+
+        for sn in samples:
+            if sn==ref_sample:
+                continue
+
+            if debug:
+                print(f"processing {sn} ...")
+            d1s = self.d1s[sn]['averaged']
+            d1bs = [self.d1s[bn]['averaged'] for bn in self.buffer_list[sn]]
+            if len(d1bs)>1:
+                d1b = d1bs[0].avg(d1bs[1:])
+            else:
+                d1b = d1bs[0]
+
+            sc = estimate_scaling_factor(d1s, d1b)
+            delta = 0.001
+            score = None
+
+            idx = ((d1s.qgrid>qrange[0]) & (d1s.qgrid<qrange[1]))
+
+            while np.fabs(delta)>0.00001:
+                if debug:
+                    print(delta, sc, score)
+                d1c = (d1s.data - d1b.data*sc)[idx]
+                dref = ref_data.data[idx]
+                dref *= np.sum(d1c)/np.sum(dref)
+                chi2 = np.sum(((dref-d1c)/d1s.err[idx])**2)
+
+                if score is None:
+                    score = chi2
+                    sc += delta
+                    continue
+                elif chi2>score:
+                    sc -= delta  # back up one step
+                    delta *= -0.8
+                    sc += delta
+                else:
+                    score = chi2
+                    sc += delta
+
+            self.d1s[sn]['subtracted'] = d1s.bkg_cor(d1b, sc_factor=sc,
+                                                     label=d1s.label.replace("averaged", "subtracted"))
+            self.attrs[sn]['sc_factor'] = sc
+
+        self.save_d1s()
+        if plot_data:
+            if ax is None:
+                plt.figure()
+                ax = plt.gca()
+            for sn in [ref_sample]+samples:
+                self.d1s[sn]['subtracted'].plot(ax=ax)
                 
     def plot_d1s(self, sn, show_subtracted=True, **kwargs):
         if show_subtracted:
