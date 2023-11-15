@@ -321,8 +321,8 @@ class h5sol_HT(h5xs):
                     print(delta, sc, score)
                 d1c = (d1s.data - d1b.data*sc)[idx]
                 dref = ref_data.data[idx]
-                dref *= np.sum(d1c)/np.sum(dref)
-                chi2 = np.sum(((dref-d1c)/d1s.err[idx])**2)
+                dref *= np.nansum(d1c)/np.nansum(dref)
+                chi2 = np.nansum(((dref-d1c)/d1s.err[idx])**2)
 
                 if score is None:
                     score = chi2
@@ -333,6 +333,8 @@ class h5sol_HT(h5xs):
                     delta *= -0.8
                     sc += delta
                 else:
+                    if chi2<1:
+                        break
                     score = chi2
                     sc += delta
 
@@ -345,7 +347,7 @@ class h5sol_HT(h5xs):
             if ax is None:
                 plt.figure()
                 ax = plt.gca()
-            for sn in [ref_sample]+samples:
+            for sn in set(samples).union([ref_sample]):
                 self.d1s[sn]['subtracted'].plot(ax=ax)
                 
     def plot_d1s(self, sn, show_subtracted=True, **kwargs):
