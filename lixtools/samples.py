@@ -217,22 +217,29 @@ def get_sample_dicts(spreadSheet, holderName, emptySample=None, check_buffer=Tru
                                      requiredFields=requiredFields, check_buffer=check_buffer)
     sdf = pd.DataFrame.from_dict(samples).transpose()
     emptyHolderName = sdf['EmptyHolderName'][0]
-    empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName, check_buffer=check_buffer)
-    edf = pd.DataFrame.from_dict(empties).transpose()
-    
+    if str(emptyHolderName)=="nan":
+        emptyHolderName = None
+
     sb_dict = {}
     for s in samples.keys():
         if 'bufferName' in samples[s].keys():
             sb_dict[s] = samples[s]['bufferName']   
-    ret['buffer'] = sb_dict
-        
+    ret['buffer'] = sb_dict    
+
     se_dict = {}
     if emptySample: # empty cell is one of the samples, applicable when empty cell scattering is reproducible
+        if emptyHolderName:
+            print(f"emptySample = {emptySample}")
+            print(f"emptyHolderName = {emptyHolderName}")
+            raise Exception("Can't specify both emptySample (same holder) and emptyHolder at the same time ...")
         if not emptySample in samples.keys():
             raise Exception(f"{emptySample} is not a valid sample for empty cell subtraction ...")
         se_dict = {sn:emptySample for sn in samples.keys() if sn!=emptySample}
-    else:
-        all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
+    elif emptyHolderName: # empty cell scattering is measured for the entire holder before loading samples    
+        empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName, check_buffer=check_buffer)
+        edf = pd.DataFrame.from_dict(empties).transpose()
+        ret['emptyHolderName'] = emptyHolderName
+        #all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
         for s in samples.keys():
             se_dict[s] = edf.index[edf['position']==samples[s]['position']].values[0]
     ret['empty'] = se_dict
