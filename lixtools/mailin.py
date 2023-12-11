@@ -241,12 +241,12 @@ def validatePlateSampleListGUI():
     vbox = ipywidgets.VBox([hbox1, hbox2, outTxt])                
 
     def on_validate_clicked(b):
-        flist = list(fnFU.value.keys())
+        flist = list(fnFU.value)
         if len(flist)==0:
             outTxt.value = "upload the sample list spreadsheet first ..."
             return
         try:
-            msg = validate_sample_list(flist[0], generate_barcode=True, 
+            msg = validate_sample_list(flist[0]['name'], generate_barcode=True, 
                                  proposal_id=propTx.value, 
                                  SAF_id=safTx.value, 
                                  plate_id=plateTx.value)
