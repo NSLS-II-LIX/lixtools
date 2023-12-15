@@ -58,6 +58,194 @@ def throttle(wait):
         return throttled
     return decorator
 
+import glob,h5py
+from py4xs.slnxs import filter_by_similarity
+
+class avgSELgui:
+    
+    btUpdate = ipywidgets.Button(description='update file list')
+    ddFileList = ipywidgets.Dropdown(description='h5 files:')
+    ddSampleList = ipywidgets.Dropdown(description='samples:')
+    smAverage = ipywidgets.SelectMultiple(description="frames:", layout=ipywidgets.Layout(flex='flex-grow', height='auto'))
+
+    max_dist = ipywidgets.FloatSlider(value=25, min=5, max=100.0, step=0.5, description='Max dist (similarity):')
+    transRange = ipywidgets.FloatRangeSlider(description="transmission range:", readout_format='.3f',
+                                             value=[0.15, 0.2], min=0., max=0.3, step=0.001) 
+
+    btApply = ipywidgets.Button(description='apply')
+    btApplyAll = ipywidgets.Button(description='apply to all', disabled=True)
+    hbox02 = ipywidgets.HBox([btApply, btApplyAll])
+
+    outTxt = ipywidgets.Textarea()    
+    output1 = ipywidgets.Output()
+    vbox1 = ipywidgets.VBox([btUpdate, ddFileList, ddSampleList, smAverage, max_dist, transRange, output1, hbox02, outTxt],
+                            layout=ipywidgets.Layout(display='flex', flex_flow='column', align_items='stretch'))
+
+    output2 = ipywidgets.Output()
+    hbox1 = ipywidgets.HBox([vbox1, output2])
+
+    dt = None
+    sn = None
+    prev_fn = ""
+    prev_sn = None
+    samples = []
+    
+    def observe(self):
+        self.ddSampleList.observe(self.onChangeSample)
+        #self.ddDatakeyList.observe(self.onUpdatePlot)
+        #self.slideScFactor.observe(self.onScfacrtorChanged)
+
+    def unobserve(self):
+        self.ddSampleList.unobserve(self.onChangeSample)
+        #self.ddDatakeyList.unobserve(self.onUpdatePlot)
+        #self.slideScFactor.unobserve(self.onScfacrtorChanged)
+        
+    def run(self, fn=None):
+        display(self.hbox1)
+
+        with self.output2:
+            self.fig2, self.ax2 = plt.subplots(constrained_layout=True, figsize=(4, 6))
+            self.fig2.canvas.toolbar_position = 'bottom'
+            plt.show(self.fig2)
+
+        with self.output1:
+            self.fig1, self.ax1 = plt.subplots(constrained_layout=True, figsize=(3, 1.5))
+            self.fig1.canvas.toolbar_position = 'bottom'
+            plt.show(self.fig1)
+        
+        plt.ion()
+        self.btApply.on_click(self.autoSelect)
+        self.transRange.observe(self.updateTransPlot)
+        self.ddFileList.observe(self.onChangeDataFile)
+        self.ddSampleList.observe(self.onChangeSample)
+        self.smAverage.observe(self.onChangeFrameSelection)
+
+        if fn:
+            self.btUpdate.disabled = True
+            self.updateFileList(fn)
+        else:
+            self.btUpdate.on_click(self.updateFileList)
+
+        
+    def onChangeDataFile(self, w):
+        fn = self.ddFileList.value
+        #print(f"in onChangeDataFile, {self.prev_fn} -> {fn}")
+        if fn==self.prev_fn or fn is None:
+            return
+        
+        self.dt = h5xs(fn)
+        self.dt.load_d1s()
+        self.samples = [sn for sn in self.dt.samples if "averaged" in self.dt.d1s[sn].keys()]
+        self.ddSampleList.options = self.samples
+        self.ddSampleList.value = self.samples[0]
+        self.prev_fn = fn
+        
+    def updateFileList(self, w):
+        flist = []      
+        if isinstance(w, str):
+            all_list = [w]
+        else:
+            all_list = glob.glob("*.h5")
+        for fn in all_list:
+            with h5py.File(fn, "r") as fh5:
+                #md = set(['instrument', 'run_type'])
+                #if not md.issubset(fh5.attrs):
+                #    continue
+                #if fh5.attrs['instrument']=='LiX' and fh5.attrs['run_type']=='fixed cell':
+                #    flist.append(fn)
+                # must have processed data
+                for sn in fh5.keys():
+                    if "processed" in fh5[sn].keys():
+                        flist.append(fn)
+                        break
+        
+        #self.ddFileList.unobserve(self.onChangeDataFile)
+        self.ddFileList.options = flist
+        #self.ddFileList.observe(self.onChangeDataFile)
+        if len(flist)>0:
+            self.ddFileList.value = flist[0]
+        else:
+            self.ddFileList.value = None
+    
+    def onChangeFrameSelection(self, w):
+        if self.dt is None:
+            return
+
+        self.onUpdatePlot("for selection change")
+        
+    def onChangeTransRange():
+        tmin, tmax = self.transRange.value
+        self.ax1.set_ylim(tmin, tmax)            
+        
+    def onChangeSample(self, w):
+        if self.dt is None:
+            return
+
+        self.sn = self.ddSampleList.value
+        if self.sn is None or self.sn==self.prev_sn:
+            return
+        
+        self.dt.get_mon(sn=self.sn)
+        self.ax1.clear()
+        self.ax1.plot(self.dt.d0s[self.sn]['transmission'], "o") 
+        
+        self.transRange.unobserve(self.updateTransPlot)
+        tmin,tmax = self.ax1.get_ylim()
+        self.transRange.value = [tmin,tmax]
+        self.transRange.min = 0.01*int(tmin*90)
+        self.transRange.max = 0.01*int(tmax*110+0.5)
+        self.transRange.observe(self.updateTransPlot)
+        
+        self.prev_sn = self.sn
+        self.outTxt.value = f"sample changed: {self.sn}"
+        self.onUpdatePlot("for sample change")
+    
+    def updateTransPlot(self, w):
+        self.ax1.set_ylim(self.transRange.value)        
+    
+    def onUpdatePlot(self, w):
+        if self.dt is None:
+            return
+        
+        self.outTxt.value = f"sample changed: {self.sn}, updating plot {w}"
+        self.ax2.clear()
+        
+        if w=="for sample change":
+            self.nfr = len(self.dt.attrs[self.sn]['selected'])
+            self.frames = [f"frame #{i}" for i in range(self.nfr)]
+            self.smAverage.unobserve(self.onChangeFrameSelection)
+            self.smAverage.options = self.frames
+            sel = [self.frames[i] for i in range(self.nfr) if self.dt.attrs[self.sn]['selected'][i]]
+            self.smAverage.value = sel
+            self.smAverage.observe(self.onChangeFrameSelection)
+        elif w=="for selection change":
+            sel = [(fr in self.smAverage.value) for fr in self.smAverage.options]
+            self.dt.average_d1s(samples=[self.sn], selection=sel)
+        
+        self.dt.plot_d1s(self.sn, show_subtracted=False, offset=0.7, ax=self.ax2)
+    
+    def autoSelect(self, w):
+        tmin, tmax = self.transRange.value
+        max_dist = self.max_dist.value
+        presel = ((self.dt.d0s[self.sn]["transmission"]>=tmin) & (self.dt.d0s[self.sn]["transmission"]<=tmax))
+        fdset = filter_by_similarity(self.dt.d1s[self.sn]['merged'], max_distance=self.max_dist.value, preselection=presel)
+        sel = [(d1 in fdset) for d1 in self.dt.d1s[self.sn]['merged']]
+        
+        self.smAverage.value = list(np.array(self.smAverage.options)[sel])
+        
+    def reprocess(self, w):
+        """ update frame selection for averaging, also update all other data that are affected
+            if empty data is shown, update all effected blank and sample
+            if blank data is shown, update all affected sample
+            if sample data is shown, update the sample itself only
+        """
+        
+        selected = [(self.frames[i] in self.smAverage.value) for i in range(self.nfr)]
+        self.dt.average_d1s(samples=self.sn, selection=selected)
+        
+        self.onUpdatePlot("update only")
+
+
 class solFCgui:
     
     btUpdate = ipywidgets.Button(description='update')
