@@ -488,7 +488,7 @@ class h5xs_an(h5xs):
             for job in jobs:
                 [sn, fr1, data] = job.get()[0]
                 results[sn][fr1] = data
-                print("data received: sn=%s, fr1=%d" % (sn,fr1) )
+                print(f"data received: sn={sn}, fr1={fr1}                    ")
             pool.close()
             pool.join()
 

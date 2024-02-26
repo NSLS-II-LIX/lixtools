@@ -18,10 +18,18 @@ def calc_tomo(args):
     dmap = mm.d[idx, :]
     yc = mm.yc[idx]
     xc = mm.xc
-    
-    algorithm = kwargs.pop("algorithm")
     proj = dmap.reshape((len(yc),1,len(xc)))
-    rot_center = tomopy.find_center(proj, np.radians(yc))
+    
+    if "algorithm" in kwargs.keys():
+        algorithm = kwargs.pop("algorithm")
+    else:
+        algorithm = "gridrec"
+        
+    if "center" in kwargs.keys():
+        rot_center = kwargs.pop("center")
+    else:
+        rot_center = tomopy.find_center(proj, np.radians(yc))
+    
     recon = tomopy.recon(proj, np.radians(yc), center=rot_center, algorithm=algorithm, sinogram_order=False, **kwargs)
     #recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
     
@@ -141,7 +149,8 @@ class h5xs_scan(h5xs_an):
         return mm
     
     def make_map_from_attr(self, sname="overall", map_data_key='maps', attr_names="transmission", 
-                           ref_int_map="int_saxs", correct_for_transsmission=True, recalc_trans_map=True,
+                           ref_int_map=None, ref_trans = 0.213,
+                           correct_for_transsmission=True, recalc_trans_map=True,
                            debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
             proc_data[sname]["attrs"][attr_name]
@@ -154,7 +163,9 @@ class h5xs_scan(h5xs_an):
             
             attr_names can be a string or a list
             
-            ref_int_map is needed as a reference for zero absorption
+            ref_int_map can be used as a reference for zero absorption (e.g. SAXS intensity)
+            alternatively, the known value of empty beam trasmission can be provided: ref_trans
+            this value can be obtained by doing a histogram on the transmission values
         """
 
         if sname=="overall":
@@ -210,6 +221,8 @@ class h5xs_scan(h5xs_an):
                 if "overall" not in self.proc_data.keys():
                     self.proc_data['overall'] = {}
                     self.proc_data['overall'][map_data_key] = {}
+                if not map_data_key in self.proc_data['overall'].keys():
+                    self.proc_data['overall'][map_data_key] = {}
                 self.proc_data['overall'][map_data_key][an] = mm
         
         # this should correct for transmitted intensity rather than for transmission
@@ -228,16 +241,23 @@ class h5xs_scan(h5xs_an):
                 self.proc_data[sname][map_data_key][an].d /= trans
 
         if 'absorption' in attr_names:
-            if not ref_int_map in self.proc_data[sname][map_data_key].keys():
-                raise Exception(f"cannot find ref_int_map: {ref_int_map}")
-            d = self.proc_data[sname][map_data_key][ref_int_map].d
-            h,b = np.histogram(d[~np.isnan(d)], bins=100)
-            vbkg = (b[0]+b[1])/2
-            mm = self.proc_data[sname][map_data_key]['transmission'].copy()
-            t1 = np.average(mm.d[self.proc_data[sname][map_data_key][ref_int_map].d<vbkg])
-            mm.d = -np.log(mm.d/t1)
-            mm.d[mm.d<0] = 0
-            self.proc_data[sname][map_data_key]['absorption'] = mm
+            if ref_int_map in self.proc_data[sname][map_data_key].keys():
+                d = self.proc_data[sname][map_data_key][ref_int_map].d
+                h,b = np.histogram(d[~np.isnan(d)], bins=100)
+                vbkg = (b[0]+b[1])/2
+                mm = self.proc_data[sname][map_data_key]['transmission'].copy()
+                t1 = np.average(mm.d[self.proc_data[sname][map_data_key][ref_int_map].d<vbkg])
+                mm.d = -np.log(mm.d/t1)
+                mm.d[mm.d<0] = 0
+                self.proc_data[sname][map_data_key]['absorption'] = mm
+            elif ref_trans>0: 
+                mm = self.proc_data[sname][map_data_key]['transmission'].copy()
+                mm.d = -np.log(mm.d/ref_trans)
+                mm.d[mm.d<0] = 0
+                mm.d[np.isnan(mm.d)] = 0
+                self.proc_data[sname][map_data_key]['absorption'] = mm
+            else:
+                raise Exception("Don't know how to calculate absorption.")
         
         if debug: print()
         self.save_data(save_sns=[sname], save_data_keys=[map_data_key], quiet=(not debug))
@@ -273,6 +293,8 @@ class h5xs_scan(h5xs_an):
         pool.close()
         for job in jobs:
             an,data = job.get()[0]
+            md = self.proc_data[sn][map_data_key][an].d
+            data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
             self.proc_data[sn][tomo_data_key][an].d = data
             if debug:
                 print(f"data received for {an}                \r", end="")
