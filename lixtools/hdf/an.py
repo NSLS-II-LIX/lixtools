@@ -299,7 +299,8 @@ class h5xs_an(h5xs):
                     self.enable_write(False)
                 if load_raw_data:
                     if not fn_raw in self.raw_data.keys():
-                        self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+                        self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], 
+                                                     sn=sn, read_only=True)
                     self.h5xs[sn] = self.raw_data[fn_raw]
                 else: 
                     self.h5xs[sn] = fn_raw
@@ -396,19 +397,30 @@ class h5xs_an(h5xs):
         self.proc_data[sn][data_key][sub_key] = data
     
     def extract_attr(self, sn, attr_name, func, data_key, sub_key, from_raw_data=False,
-                     N=8, check_size=0, **kwargs):
+                     N=8, check_size=0, debug=False, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
             and source of the data (data_key/sub_key)
+            check_size was a bandage solution and should be removed
         """
         if from_raw_data:
             self.h5xs[sn].explicit_open_h5()
-            data = [func(d, **kwargs) for d in self.h5xs[sn].fh5[sn][data_key][sub_key]]
+            data = np.array([func(d, **kwargs) for d in self.h5xs[sn].fh5[sn][data_key][sub_key]])
             self.h5xs[sn].explicit_close_h5()
         else:
-            data = [func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]]
-        if check_size>0:
-            data = np.pad(data, (0,check_size-len(data)), constant_values=np.nan)
-        self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
+            data = np.array([func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]])
+        if debug:
+            print(f"got data of shape {data.shape}")
+        #if check_size>0:
+        #    data = np.pad(data, (0,check_size-len(data)), constant_values=np.nan)
+        if isinstance(attr_name, str):
+            self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
+        elif isinstance(attr_name, list):
+            if len(attr_name)!=data.shape[-1]:
+                raise Exception(f"mismatch size of attr_name ({len(attr_name)}) and data {data.shape}")
+            for i in range(len(attr_name)):
+                self.add_proc_data(sn, 'attrs', attr_name[i], data.reshape((-1, len(attr_name)))[:,i])
+        else:
+            raise Exception(f"don't know how to handle attr_name={attr_name}")
         
     def process(self, N=8, max_c_size=1024, debug=True):
         if debug is True:
