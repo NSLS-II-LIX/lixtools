@@ -503,17 +503,18 @@ def make_maps_from_Iq(dts, save_overall=True,
             sns = dt.samples
         
         for sn in sns:
+            attr = {}
             q = dt.get_h5_attr(f"{sn}/Iq/subtracted", 'qgrid')
             Iq = dt.proc_data[sn]['Iq']['subtracted']
             for k in sks:
                 idx = ((q>=q_list[k][0]) & (q<=q_list[k][1]))
-                attr = np.sum(Iq[:,idx], axis=1)
+                attr[k] = np.sum(Iq[:,idx], axis=1)
                 if not save_overall:
-                    dt.add_proc_data(sn, 'attrs', k, attr)
+                    dt.add_proc_data(sn, 'attrs', k, attr[k])
 
         if save_overall:
             for k in sks:
-                make_map_from_overall_attr(dt, attr, template_grp=template_grp, 
+                make_map_from_overall_attr(dt, attr[k], template_grp=template_grp, 
                                            map_name=k, correct_for_transsmission=abs_cor)
             dt.save_data(save_data_keys="maps", save_sub_keys=sks, quiet=True)
         else:
