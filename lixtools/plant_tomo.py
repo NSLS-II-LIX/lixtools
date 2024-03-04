@@ -512,7 +512,7 @@ def make_maps_from_Iq(dts, save_overall=True,
                     dt.add_proc_data(sn, 'attrs', k, attr)
 
         if save_overall:
-            make_map_from_overall_attr(dt, attr, sname=sname, template_grp=template_grp, 
+            make_map_from_overall_attr(dt, attr, template_grp=template_grp, 
                                        map_name=k, correct_for_transsmission=abs_cor)
             dt.save_data(save_data_keys="maps", save_sub_keys=sks, quiet=True)
         else:
