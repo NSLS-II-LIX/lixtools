@@ -55,8 +55,8 @@ class h5xs_scan(h5xs_an):
             fn_raw = [fn_raw]
         
         for fnr in fn_raw:
-            sns = super().import_raw_data(fnr, save_attr=["source", "header", "scan"], 
-                                         force_uniform_steps=force_uniform_steps, prec=prec, **kwargs)
+            sns = super().import_raw_data(fnr, sn=sn, save_attr=["source", "header", "scan"], 
+                                          force_uniform_steps=force_uniform_steps, prec=prec, **kwargs)
             fast_axis = self.attrs[self.samples[0]]['scan']['fast_axis']['motor']
             try:
                 t = self.attrs[self.samples[0]]['header']['pilatus']['exposure_time']
@@ -148,7 +148,7 @@ class h5xs_scan(h5xs_an):
         #self.proc_data['overall']['maps'][an] = mm
         return mm
     
-    def make_map_from_attr(self, sname="overall", map_data_key='maps', attr_names="transmission", 
+    def make_map_from_attr(self, save_overall=True, map_data_key='maps', attr_names="transmission", 
                            ref_int_map=None, ref_trans = 0.213,
                            correct_for_transsmission=True, recalc_trans_map=True,
                            debug=True):
@@ -168,18 +168,12 @@ class h5xs_scan(h5xs_an):
             this value can be obtained by doing a histogram on the transmission values
         """
 
-        if sname=="overall":
-            samples = self.samples
-        elif sname in self.samples:
-            samples = [sname]
-        else:
-            raise Exception(f"sample {sname} does not exist") 
-        
         if isinstance(attr_names, str):
             attr_names = [attr_names]
         
         # must have transmission data if correct_for_transsmission, or if need to calculate absorption
         if correct_for_transsmission or "absorption" in attr_names:
+            sname = self.samples[0]
             if not "transmission" in attr_names:
                 if not 'overall' in self.proc_data.keys():
                     attr_names.append("transmission")
@@ -210,57 +204,64 @@ class h5xs_scan(h5xs_an):
                     #print(f"de-snaking {sn}, {an}      \r", end="")
                     for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
                         m.d[i] = np.flip(m.d[i])
-                if map_data_key not in self.proc_data[sn].keys():
-                    self.proc_data[sn][map_data_key] = {}
+                #if map_data_key not in self.proc_data[sn].keys():
+                #    self.proc_data[sn][map_data_key] = {}
                 maps.append(m)
-                self.proc_data[sn][map_data_key][an] = m
+                self.add_proc_data(sn, map_data_key, an, m)
 
             # assume the scans are of the same type, therefore start from the same direction
-            if sname=="overall":
+            if save_overall:
                 mm = maps[0].merge(maps[1:])
-                if "overall" not in self.proc_data.keys():
-                    self.proc_data['overall'] = {}
-                    self.proc_data['overall'][map_data_key] = {}
-                if not map_data_key in self.proc_data['overall'].keys():
-                    self.proc_data['overall'][map_data_key] = {}
-                self.proc_data['overall'][map_data_key][an] = mm
+                #if "overall" not in self.proc_data.keys():
+                #    self.proc_data['overall'] = {}
+                #    self.proc_data['overall'][map_data_key] = {}
+                #if not map_data_key in self.proc_data['overall'].keys():
+                #    self.proc_data['overall'][map_data_key] = {}
+                #self.proc_data['overall'][map_data_key][an] = mm
+                self.add_proc_data('overall', map_data_key, an, mm)
         
-        # this should correct for transmitted intensity rather than for transmission
-        # sometimes the beam can be off for part of the scan, that part of the data should not be corrected
-        if correct_for_transsmission:  
-            trans = np.copy(self.proc_data[sname][map_data_key]["transmitted"].d)
-            idx = (trans<np.average(trans)/4)
-            trans[idx] /= np.average(~idx)
-            trans[~idx] = 1
-            for an in attr_names:
-                if an in ["incident", "transmission", "absorption", "transmitted"]:
-                    continue
-                if debug:
-                    print(f"transmmision correction: {sname}, {an}      \r", end="")
-                #self.proc_data[sname][map_data_key][an].d /= self.proc_data[sname][map_data_key]["transmission"].d
-                self.proc_data[sname][map_data_key][an].d /= trans
+        if save_overall:
+            sns = ['overall']
+        else:
+            sns = self.samples
+        
+        for sname in sns:
+            # this should correct for transmitted intensity rather than for transmission
+            # sometimes the beam can be off for part of the scan, that part of the data should not be corrected
+            if correct_for_transsmission:  
+                trans = np.copy(self.proc_data[sname][map_data_key]["transmitted"].d)
+                idx = (trans<np.average(trans)/4)
+                trans[idx] /= np.average(~idx)
+                trans[~idx] = 1
+                for an in attr_names:
+                    if an in ["incident", "transmission", "absorption", "transmitted"]:
+                        continue
+                    if debug:
+                        print(f"transmmision correction: {sname}, {an}      \r", end="")
+                    #self.proc_data[sname][map_data_key][an].d /= self.proc_data[sname][map_data_key]["transmission"].d
+                    self.proc_data[sname][map_data_key][an].d /= trans
 
-        if 'absorption' in attr_names:
-            if ref_int_map in self.proc_data[sname][map_data_key].keys():
-                d = self.proc_data[sname][map_data_key][ref_int_map].d
-                h,b = np.histogram(d[~np.isnan(d)], bins=100)
-                vbkg = (b[0]+b[1])/2
-                mm = self.proc_data[sname][map_data_key]['transmission'].copy()
-                t1 = np.average(mm.d[self.proc_data[sname][map_data_key][ref_int_map].d<vbkg])
-                mm.d = -np.log(mm.d/t1)
-                mm.d[mm.d<0] = 0
-                self.proc_data[sname][map_data_key]['absorption'] = mm
-            elif ref_trans>0: 
-                mm = self.proc_data[sname][map_data_key]['transmission'].copy()
-                mm.d = -np.log(mm.d/ref_trans)
-                mm.d[mm.d<0] = 0
-                mm.d[np.isnan(mm.d)] = 0
-                self.proc_data[sname][map_data_key]['absorption'] = mm
-            else:
-                raise Exception("Don't know how to calculate absorption.")
+            if 'absorption' in attr_names:
+                if ref_int_map in self.proc_data[sname][map_data_key].keys():
+                    d = self.proc_data[sname][map_data_key][ref_int_map].d
+                    h,b = np.histogram(d[~np.isnan(d)], bins=100)
+                    vbkg = (b[0]+b[1])/2
+                    mm = self.proc_data[sname][map_data_key]['transmission'].copy()
+                    t1 = np.average(mm.d[self.proc_data[sname][map_data_key][ref_int_map].d<vbkg])
+                    mm.d = -np.log(mm.d/t1)
+                    mm.d[mm.d<0] = 0
+                    self.proc_data[sname][map_data_key]['absorption'] = mm
+                elif ref_trans>0: 
+                    mm = self.proc_data[sname][map_data_key]['transmission'].copy()
+                    mm.d = -np.log(mm.d/ref_trans)
+                    mm.d[mm.d<0] = 0
+                    mm.d[np.isnan(mm.d)] = 0
+                    self.proc_data[sname][map_data_key]['absorption'] = mm
+                else:
+                    raise Exception("Don't know how to calculate absorption.")
         
         if debug: print()
-        self.save_data(save_sns=[sname], save_data_keys=[map_data_key], quiet=(not debug))
+        self.save_data(save_data_keys=[map_data_key], quiet=(not debug))
         
     def calc_tomo_from_map(self, attr_names, map_data_key='maps', tomo_data_key='tomo', debug=True, **kwargs):
         """ attr_names can be a string or a list

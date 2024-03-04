@@ -334,7 +334,7 @@ class h5xs_an(h5xs):
         if debug:
             print(f"importing meta data from {fn_raw} ...")
         
-        dt = h5xs(fn_raw, [self.detectors, self.qgrid], read_only=True)
+        dt = h5xs(fn_raw, [self.detectors, self.qgrid], sn=sn, read_only=True)
         if sn is None:
             sns = dt.samples
         else: 
@@ -343,6 +343,8 @@ class h5xs_an(h5xs):
             sns = [sn]
         
         for sn in sns:
+            if debug:
+                print(f"    importing {sn} ...")
             self.h5xs[sn] = dt
             self.enable_write(True)
             if not sn in self.attrs.keys():
