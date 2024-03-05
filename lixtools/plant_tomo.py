@@ -563,11 +563,15 @@ def get_roi(d, qphirange):
     return np.nanmean(d.apply_symmetry().roi(*qphirange).d)
 
 
-def calc_CI(dt, data_key="tomo", abs_cutoff=0.02):
-    mm = dt.proc_data['overall'][data_key]['int_cell_Iq'].copy()
-    dc = dt.proc_data['overall'][data_key]['int_cell_Iq'].d
-    da = dt.proc_data['overall'][data_key]['int_amor_Iq'].d
-    idx = (dt.proc_data['overall'][data_key]['absorption'].d>=abs_cutoff)
+def calc_CI(dt, data_key="tomo", cell_key='int_cell_Iq', amor_key='int_amor_Iq',
+            sc=1., ref_key="absorption", ref_cutoff=0.02):
+    """ sc is needed to account for the intensity difference between cellulose and amorphous 
+        components due to the way they are calculated: span of q-range, shaping factor
+    """
+    mm = dt.proc_data['overall'][data_key][cell_key].copy()
+    dc = dt.proc_data['overall'][data_key][cell_key].d
+    da = dt.proc_data['overall'][data_key][amor_key].d*sc
+    idx = (dt.proc_data['overall'][data_key][ref_key].d>=ref_cutoff)
     mm.d[idx] = (dc-da)[idx]/dc[idx]
     mm.d[~idx] = 0
     mm.d[np.isinf(mm.d)] = 0
