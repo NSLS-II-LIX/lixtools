@@ -228,7 +228,8 @@ class avgSELgui:
         tmin, tmax = self.transRange.value
         max_dist = self.max_dist.value
         presel = ((self.dt.d0s[self.sn]["transmission"]>=tmin) & (self.dt.d0s[self.sn]["transmission"]<=tmax))
-        fdset = filter_by_similarity(self.dt.d1s[self.sn]['merged'], max_distance=self.max_dist.value, preselection=presel)
+        fdset = filter_by_similarity(self.dt.d1s[self.sn]['merged'], 
+                                     max_distance=self.max_dist.value, preselection=presel)
         sel = [(d1 in fdset) for d1 in self.dt.d1s[self.sn]['merged']]
         
         self.smAverage.value = list(np.array(self.smAverage.options)[sel])
@@ -249,13 +250,16 @@ class avgSELgui:
 class solFCgui:
     
     btUpdate = ipywidgets.Button(description='update')
+    ddPlotType = ipywidgets.widgets.Dropdown(options=['log', 'linear q', 'linear'], value='log',
+                                             layout=ipywidgets.Layout(width='40%'))
     ddFileList = ipywidgets.Dropdown(description='h5 files:', layout=ipywidgets.Layout(width='90%'))
     slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.8, max=1.2, step=0.0001,
                                            style = {'description_width': 'initial'},
                                            description='Scaling factor:', readout_format='.4f',
                                            layout=ipywidgets.Layout(width='90%'))
     ddDatakeyList = ipywidgets.Dropdown(description='datakey:')
-    vbox1 = ipywidgets.VBox([btUpdate, ddFileList, ddDatakeyList, slideScFactor], layout=ipywidgets.Layout(width='30%'))
+    vbox1 = ipywidgets.VBox([ipywidgets.HBox([btUpdate,ddPlotType]), 
+                             ddFileList, ddDatakeyList, slideScFactor], layout=ipywidgets.Layout(width='30%'))
 
     label2 = ipywidgets.Label(value='show data:')
     rbShowData = {}
@@ -296,6 +300,7 @@ class solFCgui:
         self.ddSampleList.observe(self.onChangeSample)
         self.ddDatakeyList.observe(self.onUpdatePlot)
         self.slideScFactor.observe(self.onScfacrtorChanged)
+        self.ddPlotType.observe(self.onUpdatePlot)
 
     def unobserve(self):
         self.ddSampleList.unobserve(self.onChangeSample)
@@ -423,7 +428,22 @@ class solFCgui:
             self.dt.plot_d1s(self.sns, show_subtracted=False, offset=0.7, ax=self.ax)
         else:
             self.dt.plot_d1s(self.sns, show_subtracted=self.dk, ax=self.ax)
-            self.smAverage.options = []
+            self.smAverage.options = []    
+
+        if self.ddPlotType.value == "log":
+            self.ax.set_xscale('log')
+            self.ax.set_yscale('log')
+        elif self.ddPlotType.value == "linear q":
+            self.ax.set_xscale('linear')
+            self.ax.set_yscale('log')
+            #self.ax.autoscale()
+            self.ax.set_xlim(left=0)
+        else:
+            self.ax.set_xscale('linear')
+            self.ax.set_xlim(left=0)
+            self.ax.set_yscale('linear')
+            self.ax.set_ylim(bottom=0)
+            #self.ax.autoscale()
 
         self.observe()
             
@@ -450,7 +470,7 @@ class solFCgui:
         self.dt.subtract_buffer(sc_factor='auto')  # keep current value
         
         self.onUpdatePlot("update only")
-            
+        
 
 class solHTgui:
     
