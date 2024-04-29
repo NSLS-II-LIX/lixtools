@@ -102,7 +102,7 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
                 check_for_duplicate=False, check_buffer=True, configName=None,
                 requiredFields=['sampleName', 'holderName', 'position'],
                 optionalFields=['volume', 'exposure', 'bufferName'],
-                autofillFields=['holderName', 'volume', 'exposure', 'EmptyHolderName', 'BlankHolderName'],
+                autofillFields=['holderName', 'volume', 'exposure', 'BlankHolderName'],
                 strFields=['sampleName', 'bufferName', 'holderName'], 
                 numFields=['volume', 'position', 'exposure'], 
                 min_load_volume=20, maxNsamples=18, sbSameRow=False):
@@ -202,21 +202,22 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
             
     return samples
 
-def get_sample_dicts(spreadSheet, holderName, emptySample=None, check_buffer=True):
+def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
     """
     check_buffer=True checks whether all necessary buffers are included in the holder, which
         is not necessary for fixed cell measurements
     """
-    
-    requiredFields = ['sampleName', 'holderName', 'position', 'EmptyHolderName']
+    requiredFields = ['sampleName', 'holderName', 'position', 'EmptySampleName', 'EmptyHolderName']
     if check_buffer:
         requiredFields += ['bufferName'] 
     ret = {}
     
+    # do not autofill the EmptyHolderName column
     samples = parseHolderSpreadsheet(spreadSheet, holderName=holderName, 
-                                     requiredFields=requiredFields, check_buffer=check_buffer)
+                                     requiredFields=requiredFields, check_buffer=check_buffer,
+                                     autofillFields=['holderName', 'volume', 'exposure', 'BlankHolderName'])
     sdf = pd.DataFrame.from_dict(samples).transpose()
-    emptyHolderName = sdf['EmptyHolderName'][0]
+    emptyHolderName = sdf['EmptyHolderName'].iloc[0]
     if str(emptyHolderName)=="nan":
         emptyHolderName = None
 
@@ -227,21 +228,17 @@ def get_sample_dicts(spreadSheet, holderName, emptySample=None, check_buffer=Tru
     ret['buffer'] = sb_dict    
 
     se_dict = {}
-    if emptySample: # empty cell is one of the samples, applicable when empty cell scattering is reproducible
-        if emptyHolderName:
-            print(f"emptySample = {emptySample}")
-            print(f"emptyHolderName = {emptyHolderName}")
-            raise Exception("Can't specify both emptySample (same holder) and emptyHolder at the same time ...")
-        if not emptySample in samples.keys():
-            raise Exception(f"{emptySample} is not a valid sample for empty cell subtraction ...")
-        se_dict = {sn:emptySample for sn in samples.keys() if sn!=emptySample}
-    elif emptyHolderName: # empty cell scattering is measured for the entire holder before loading samples    
+    if emptyHolderName: # empty cell scattering is measured for the entire holder before loading samples    
         empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName, check_buffer=check_buffer)
         edf = pd.DataFrame.from_dict(empties).transpose()
         ret['emptyHolderName'] = emptyHolderName
         #all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
         for s in samples.keys():
             se_dict[s] = edf.index[edf['position']==samples[s]['position']].values[0]
+    else: # empty cell in the same holder
+        se_dict = {s:samples[s]['EmptySampleName'] for s in samples.keys() if isinstance(samples[s]['EmptySampleName'], str)}
+        if len(se_dict)==0:
+            raise Exception(f"{emptySample} is not a valid sample for empty cell subtraction ...")
     ret['empty'] = se_dict
 
     return ret
