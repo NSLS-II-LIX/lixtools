@@ -31,7 +31,7 @@ def calc_tomo(args):
         rot_center = tomopy.find_center(proj, np.radians(yc))
     
     recon = tomopy.recon(proj, np.radians(yc), center=rot_center, algorithm=algorithm, sinogram_order=False, **kwargs)
-    #recon = tomopy.circ_mask(recon, axis=0, ratio=0.95)
+    recon = tomopy.circ_mask(recon, axis=0) #, ratio=0.95)
     
     return [an,recon[0,:,:]]
 

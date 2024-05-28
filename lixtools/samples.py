@@ -202,12 +202,15 @@ def parseHolderSpreadsheet(spreadSheet, sheet_name=0, holderName=None,
             
     return samples
 
-def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
+def get_sample_dicts(spreadSheet, holderName, check_buffer=True, use_flowcell=False):
     """
     check_buffer=True checks whether all necessary buffers are included in the holder, which
         is not necessary for fixed cell measurements
     """
-    requiredFields = ['sampleName', 'holderName', 'position', 'EmptySampleName', 'EmptyHolderName']
+    if use_flowcell:
+        requiredFields = ['sampleName', 'holderName', 'position']
+    else:
+        requiredFields = ['sampleName', 'holderName', 'position', 'EmptySampleName', 'EmptyHolderName']
     if check_buffer:
         requiredFields += ['bufferName'] 
     ret = {}
@@ -216,10 +219,9 @@ def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
     samples = parseHolderSpreadsheet(spreadSheet, holderName=holderName, 
                                      requiredFields=requiredFields, check_buffer=check_buffer,
                                      autofillFields=['holderName', 'volume', 'exposure', 'BlankHolderName'])
+    if len(samples)==0:
+        raise Exception(f"no sample found for holder: {holderName}")
     sdf = pd.DataFrame.from_dict(samples).transpose()
-    emptyHolderName = sdf['EmptyHolderName'].iloc[0]
-    if str(emptyHolderName)=="nan":
-        emptyHolderName = None
 
     sb_dict = {}
     for s in samples.keys():
@@ -227,26 +229,31 @@ def get_sample_dicts(spreadSheet, holderName, check_buffer=True):
             sb_dict[s] = samples[s]['bufferName']   
     ret['buffer'] = sb_dict    
 
-    se_dict = {}
-    if emptyHolderName: # empty cell scattering is measured for the entire holder before loading samples    
-        empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName, check_buffer=check_buffer)
-        edf = pd.DataFrame.from_dict(empties).transpose()
-        ret['emptyHolderName'] = emptyHolderName
-        #all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
-        for s in samples.keys():
-            se_dict[s] = edf.index[edf['position']==samples[s]['position']].values[0]
-    else: # empty cell in the same holder
-        se_dict = {s:samples[s]['EmptySampleName'] for s in samples.keys() if isinstance(samples[s]['EmptySampleName'], str)}
-        if len(se_dict)==0:
-            raise Exception(f"{emptySample} is not a valid sample for empty cell subtraction ...")
-    ret['empty'] = se_dict
+    if not use_flowcell:
+        emptyHolderName = sdf['EmptyHolderName'].iloc[0]
+        if str(emptyHolderName)=="nan":
+            emptyHolderName = None
+
+        se_dict = {}
+        if emptyHolderName: # empty cell scattering is measured for the entire holder before loading samples    
+            empties = parseHolderSpreadsheet(spreadSheet, holderName=emptyHolderName, check_buffer=check_buffer)
+            edf = pd.DataFrame.from_dict(empties).transpose()
+            ret['emptyHolderName'] = emptyHolderName
+            #all_samples = list(set(sb_dict.keys()) | set(sb_dict.values())) 
+            for s in samples.keys():
+                se_dict[s] = edf.index[edf['position']==samples[s]['position']].values[0]
+        else: # empty cell in the same holder
+            se_dict = {s:samples[s]['EmptySampleName'] for s in samples.keys() if isinstance(samples[s]['EmptySampleName'], str)}
+            if len(se_dict)==0:
+                raise Exception(f"{emptySample} is not a valid sample for empty cell subtraction ...")
+        ret['empty'] = se_dict
 
     return ret
 
 ## this should be identical to parseHolderSpreadsheet
 ## kept in case something is missing
 def get_samples(spreadSheet, holderName, sheet_name=0,
-                check_for_duplicate=False, configName=None,
+                check_for_duplicate=False, configName=None, min_load_volume=20,
                 requiredFields=['sampleName', 'holderName', 'position'],
                 optionalFields=['volume', 'exposure', 'bufferName'],
                 autofillFields=['holderName', 'volume', 'exposure'],
@@ -272,7 +279,7 @@ def get_samples(spreadSheet, holderName, sheet_name=0,
     if 'volume' in allFields:
         if np.min(list(d['volume'].values()))<min_load_volume:
             raise Exception(f"load volume must be greater than {min_load_volume} ul!")
-
+            
     # check for duplicate sample name
     sl = list(d['sampleName'].values())
     for ss in sl:

@@ -7,6 +7,7 @@ import json,time,copy
 from scipy.linalg import svd
 from scipy.interpolate import splrep,sproot,splev,UnivariateSpline
 from scipy.ndimage.filters import gaussian_filter
+from sklearn.decomposition import NMF
 
 def qgrid_labels(qgrid):
     dq = qgrid[1]-qgrid[0]
@@ -91,6 +92,107 @@ class h5sol_HPLC(h5xs):
             self.set_trans(transMode=trans_mode.from_waxs) 
         self.normalize_int()
 
+    def subtract_buffer_NMF(self, excluded_frames_list, sn=None, sc_factor=0.995,
+                            gaussian_filter_width=None,
+                            Nc=5, poly_order=2, smoothing_factor=0.04, fit_with_polynomial=False,
+                            plot_fit=False, ax1=None, ax2=None, debug=False, 
+                            init='nndsvd', **kwargs):
+        """ similar to SVD subtraction, accept that NMF is used instead
+            kwargs are for NMF
+        """
+        sn = self.process_sample_name(sn, debug=debug)
+        if debug is True:
+            print("start processing: subtract_buffer()")
+            t1 = time.time()
+
+        if isinstance(poly_order, int):
+            poly_order = poly_order*np.ones(Nc, dtype=int)
+        elif isinstance(poly_order, list):
+            if len(poly_order)!=Nc:
+                raise Exception(f"the length of poly_order ({poly_order}) must match Nc ({Nc}).")
+        else:
+            raise Exception(f"invalid poly_order: {poly_order}")
+
+        if isinstance(smoothing_factor, float) or isinstance(smoothing_factor, int):
+            smoothing_factor = smoothing_factor*np.ones(Nc, dtype=float)
+        elif isinstance(poly_order, list):
+            if len(smoothing_factor)!=Nc:
+                raise Exception(f"the length of smoothing_factor ({smoothing_factor}) must match Nc ({Nc}).")
+        else:
+            raise Exception(f"invalid smoothing_factor: {smoothing_factor}")
+                    
+        nf = len(self.d1s[sn]['merged'])
+        all_frns = list(range(nf))
+        ex_frns = []
+        for r in excluded_frames_list.split(','):
+            if r=="":
+                break
+            r1,r2 = np.fromstring(r, dtype=int, sep='-')
+            ex_frns += list(range(r1,r2))
+        bkg_frns = list(set(all_frns)-set(ex_frns))
+        
+        dd2s = np.vstack([d1.data for d1 in self.d1s[sn]['merged']]).T
+        if gaussian_filter_width is not None:
+            dd2s = gaussian_filter(dd2s, sigma=gaussian_filter_width)
+        dd2b = np.vstack([dd2s[:,i] for i in bkg_frns]).T
+        
+        model = NMF(n_components=Nc, init=init, **kwargs) 
+        W = model.fit_transform(dd2b)
+        H = model.components_
+
+        H0 = []
+        for i,d in enumerate(H):
+            if fit_with_polynomial:
+                pf = np.poly1d(np.polyfit(bkg_frns, d, poly_order[i])) 
+            else:
+                pf = UnivariateSpline(bkg_frns, d, s=smoothing_factor[i]) #30
+            H0.append(pf(all_frns))
+        dd2c = W@np.vstack(H0)
+
+        if plot_fit:
+            if ax1 is None:
+                fig = plt.figure()
+                ax1 = fig.add_subplot(121)
+                ax2 = fig.add_subplot(122)
+            for i in reversed(range(Nc)):
+                ax1.plot(bkg_frns, H[i], '.') #s[i]*U[:,i])
+            for i in reversed(range(Nc)):
+                ax1.plot(all_frns, H0[i]) #s[i]*U[:,i])  
+            ax1.set_xlim(0, nf)
+            ax1.set_xlabel("frame #")
+            if ax2 is not None:
+                for i in reversed(range(Nc)):
+                    ax2.semilogy(self.qgrid, W.T[i]) 
+                ax2.set_xlabel("q")                
+
+        if self.read_only:
+            print("h5 file is read-only ...")
+        else:
+            grp = f""
+            self.attrs[sn]['sc_factor'] = sc_factor
+            self.attrs[sn]['subtraction'] = 'method: nmf , '
+            self.attrs[sn]['subtraction'] += f"excluded frames: {excluded_frames_list} , "
+            if fit_with_polynomial:
+                self.attrs[sn]['subtraction'] += f"poly_fit with poly_order={poly_order}"
+            else:
+                self.attrs[sn]['subtraction'] += f"spline with smoothing={smoothing_factor}"
+        
+        if 'subtracted' in self.d1s[sn].keys():
+            del self.d1s[sn]['subtracted']
+        self.d1s[sn]['subtracted'] = []
+        
+        # the protein volume fraction should not be constant across the peak
+        d0=np.sum((dd2s-dd2c)[10:20,:], axis=0)
+        scm = np.repeat([1.-(1.-sc_factor)*d0/np.max(d0)], dd2s.shape[0], axis=0)
+        dd2s -= dd2c*scm
+        for i in range(nf):
+            d1c = copy.deepcopy(self.d1s[sn]['merged'][i])
+            d1c.data = dd2s[:,i]
+            self.d1s[sn]['subtracted'].append(d1c)
+            
+        self.save_d1s(sn, debug=debug)
+
+
     def subtract_buffer_SVD(self, excluded_frames_list, sn=None, sc_factor=0.995,
                             gaussian_filter_width=None,
                             Nc=5, poly_order=8, smoothing_factor=0.04, fit_with_polynomial=False,
@@ -98,6 +200,8 @@ class h5sol_HPLC(h5xs):
         """ perform SVD background subtraction, use Nc eigenvalues 
             poly_order: order of polynomial fit to each eigenvalue
             gaussian_filter width: sigma value for the filter, e.g. 1, or (0.5, 3)
+            if fit_with_polynomial is True, use polinomial fitting with poly_order 
+                otherwise, use UnivariateSpline with smoothing_factor 
         """
         sn = self.process_sample_name(sn, debug=debug)
         if debug is True:

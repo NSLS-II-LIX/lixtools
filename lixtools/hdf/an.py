@@ -331,6 +331,8 @@ class h5xs_an(h5xs):
                        for scanning data, this should be ["source", "header", 'scan']
                        for HPLC data ???
         """
+        if not os.path.isfile(fn_raw):
+            raise Exception(f"{fn_raw} is not a valid file name ...")
         if debug:
             print(f"importing meta data from {fn_raw} ...")
         
@@ -398,6 +400,7 @@ class h5xs_an(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
+    @h5_file_access
     def extract_attr(self, sn, attr_name, func, data_key, sub_key, from_raw_data=False,
                      N=8, check_size=0, debug=False, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
@@ -422,7 +425,9 @@ class h5xs_an(h5xs):
             for i in range(len(attr_name)):
                 self.add_proc_data(sn, 'attrs', attr_name[i], data.reshape((-1, len(attr_name)))[:,i])
         else:
-            raise Exception(f"don't know how to handle attr_name={attr_name}")
+            raise Exception(f"don't know how to handle attr_name={attr_name}", quiet=True)
+            
+        self.save_data(save_sns=[sn], save_data_keys=['attrs'], save_sub_keys=[attr_name])
         
     def process(self, N=8, max_c_size=1024, debug=True):
         if debug is True:
@@ -438,7 +443,8 @@ class h5xs_an(h5xs):
 
         if debug is True:
             t2 = time.time()
-            print("done, time elapsed: %.2f sec" % (t2-t1))                
+            print("done, time elapsed: %.2f sec" % (t2-t1))   
+        self.save_data()
 
     @h5_file_access
     def process1d0(self, N=8, max_c_size=1024, debug=True):

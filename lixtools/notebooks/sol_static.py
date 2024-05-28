@@ -695,7 +695,7 @@ class solHTgui:
         self.ax3.clear()
         if isSample and show_sub:
             d1 = self.dt.d1s[sn]['subtracted']
-            ym = np.max(d1.data[d1.qgrid>0.5])
+            ym = np.nanmax(d1.data[d1.qgrid>0.5])
             qm = d1.qgrid[d1.data>0][-1]
             self.ax2.semilogy(d1.qgrid, d1.data)
             #ax2.errorbar(d1.qgrid, d1.data, d1.err)
