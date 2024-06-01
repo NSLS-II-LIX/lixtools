@@ -233,9 +233,9 @@ class h5sol_HT(h5xs):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
         if filter_data=="keep":
-            self.load_d1s()
+            self.load_d1s()     # read buffer assignment
         self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
-                       save_merged=save_merged, debug=debug, N=N)
+                       save_merged=save_merged, save_d1s=False, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
         if filter_data=="keep":
             self.average_d1s(update_only=update_only, filter_data=False, selection=None, debug=debug)
