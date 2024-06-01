@@ -234,6 +234,7 @@ class h5sol_HT(h5xs):
         """
         if filter_data=="keep":
             self.load_d1s()     # read buffer assignment
+        # save_d1s=False below resolves a file access issue in h5xs.load_data()
         self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
                        save_merged=save_merged, save_d1s=False, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
