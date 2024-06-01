@@ -14,7 +14,7 @@ from lixtools.hdf.sol import h5sol_fc
 
 # these are from ipywidget docs
 import asyncio
-from time import time
+from time import time,sleep
 from threading import Timer
 
 def debounce(wait):
@@ -619,10 +619,11 @@ class solHTgui:
     def updateFileList(self, w):
         flist = self.getFileList()
         self.dataFileSel.options = flist
+        self.dataFileSel.value = None    # to ensure the data file is reloaded even if the filelist doesn't change
+
         if len(flist)>0:
+            sleep(0.1)
             self.dataFileSel.value = flist[0]
-        else:
-            self.dataFileSel.value = None
     
     def onChangeSample(self, w):
         if self.dt is None:
