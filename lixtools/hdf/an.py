@@ -243,7 +243,8 @@ class h5xs_an(h5xs):
         
     """
     def __init__(self, *args, 
-                 Nphi=32, load_raw_data=True, pre_proc="2D", replace_path={}, quiet=True,
+                 Nphi=32, load_raw_data=True, ignore_source_path=False,
+                 pre_proc="2D", replace_path={}, quiet=True,
                  **kwargs):
         """ pre_proc: should be either 1D or 2D, determines whether to save q-phi maps or 
                 azimuhtal averages as the pre-processed data
@@ -292,7 +293,10 @@ class h5xs_an(h5xs):
                 fn_raw_path = os.path.dirname(fn_raw0)
                 fn_raw = update_res_path(fn_raw0, replace_path, quiet=quiet)
                 if not os.path.exists(fn_raw):
-                    raise Exception(f"raw data file {fn_raw} does not exist ...")
+                    if ignore_source_path:
+                        fn_raw = ""
+                    else:
+                        raise Exception(f"raw data file {fn_raw} does not exist ...")
                 if fn_raw!=fn_raw0:
                     self.enable_write(True)
                     self.fh5[sn].attrs['source'] = fn_raw
@@ -357,6 +361,8 @@ class h5xs_an(h5xs):
                 grp = self.fh5[sn]
 
             if "source" in save_attr:
+                if self.attrs[sn]['source']=="": # probably should have not gone this far anyway
+                    raise Exception(f"raw data for {sn} was never loaded ...")
                 self.attrs[sn]['source'] = os.path.realpath(fn_raw)
                 grp.attrs['source'] = self.attrs[sn]['source'] 
             if "header" in save_attr:
@@ -871,7 +877,7 @@ class h5xs_an(h5xs):
         if data_key in list(grp.keys()):
             grp = grp[data_key]
             if grp.attrs['type']!=dtype:
-                raise Exception(f"data type of {data_key} for {sn} does not match existing data")
+                raise Exception(f"data type of {data_key} for {sn} ({dtype}) does not match existing data ({grp.attrs['type']})")
             for k in save_fields[dtype]["shared"]:
                 if isinstance(d0.__dict__[k], str):  # labels
                     if d0.__dict__[k]==grp.attrs[k]:
