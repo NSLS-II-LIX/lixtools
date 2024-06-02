@@ -31,7 +31,7 @@ qgrid0 = get_grid_from_bin_ranges(q_bin_ranges)
 import tomopy
 from matplotlib.widgets import Slider,Button
 
-def cen_test(dt, map_key="absorption", test_range=30, txm_normed_flag=1, clim=[]):    
+def cen_test(dt: type(h5xs_scan), map_key="absorption", test_range=30, clim=[], cmap='bone'):    
     """ adapted from Mingyuan Ge
     """
     dsin = dt.proc_data['overall']['maps'][map_key]
@@ -48,16 +48,17 @@ def cen_test(dt, map_key="absorption", test_range=30, txm_normed_flag=1, clim=[]
     
     for i in range(len(cen)):
         img[i] = tomopy.recon(prj, theta, center=cen[i], algorithm="gridrec")
-    img = tomopy.circ_mask(img, axis=0, ratio=0.8)
+    img = tomopy.circ_mask(img, axis=0, ratio=1.0) #0.8)
 
     fig, ax = plt.subplots()
     axis = 0
     index_init = int(img.shape[axis]//2)
         
     if len(clim) == 2:
-        im = ax.imshow(img.take(index_init,axis=axis), cmap='bone', clim=clim)
+        im = ax.imshow(img.take(index_init,axis=axis), cmap=cmap, clim=clim, origin="lower")
     else:
-        im = ax.imshow(img.take(index_init,axis=axis), cmap='bone')
+        im = ax.imshow(img.take(index_init,axis=axis), cmap=cmap, origin="lower")  
+ 
     fig.subplots_adjust(bottom=0.15)
     axslide = fig.add_axes([0.1, 0.03, 0.65, 0.03])
     c_slider = Slider(ax=axslide, label='center', valmin=cen[0], valmax=cen[-1], 
@@ -106,19 +107,6 @@ def remove_zingers_1d(q, I, q0=0.15, radius=3000):
 def scf(q, q0=0.08, ex=2):
     sc = 1./(np.power(q, -ex)+1./q0)
     return sc
-
-
-def plot_data(data, q, skip=237, ax=None, logScale=True):
-    if ax is None:
-        plt.figure()
-        ax = plt.gca()
-
-    for i in range(0,data.shape[0],skip):
-        ax.plot(q, data[i,:])
-    
-    if logScale:
-        ax.set_xscale("log")
-        ax.set_yscale("log")
     
 
 def create_XRF_link(dfn, sn, fn):
@@ -222,7 +210,9 @@ def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", phi_range=None, s
     pool = mp.Pool(N)
     jobs = []
     for sn in dt.samples:
-        sc = scf(dt.qgrid, q0=q0, ex=ex)
+        qgrid = dt.proc_data[dt.samples[0]]['qphi']['merged'][0].xc
+        #qgrid = dt.qgrid        # should be the same as above
+        sc = scf(qgrid, q0=q0, ex=ex)
         job = pool.map_async(bin_q_data, 
                              [(dt.fn,sn,sc,q_range,phi_range,dezinger,trans_cor,debug)])  
         jobs.append(job)
@@ -561,138 +551,6 @@ def recombine(coef, method="nmf"):
 
 def get_roi(d, qphirange):
     return np.nanmean(d.apply_symmetry().roi(*qphirange).d)
-
-
-def calc_CI(dt, data_key="tomo", cell_key='int_cell_Iq', amor_key='int_amor_Iq',
-            sc=1., ref_key="absorption", ref_cutoff=0.02):
-    """ sc is needed to account for the intensity difference between cellulose and amorphous 
-        components due to the way they are calculated: span of q-range, shaping factor
-    """
-    mm = dt.proc_data['overall'][data_key][cell_key].copy()
-    dc = dt.proc_data['overall'][data_key][cell_key].d
-    da = dt.proc_data['overall'][data_key][amor_key].d*sc
-    idx = (dt.proc_data['overall'][data_key][ref_key].d>=ref_cutoff)
-    mm.d[idx] = (dc-da)[idx]/dc[idx]
-    mm.d[~idx] = 0
-    mm.d[np.isinf(mm.d)] = 0
-    dt.proc_data['overall'][data_key]['CI'] = mm
-    dt.save_data(save_sns='overall', save_data_keys=[data_key], save_sub_keys=['CI'])
-
-
-# see Rüggeberg et al. J Struct Biol 2013, though there appear to be errors in the equations (Appendix)
-# but the final expressions for the phi positions are correct (from Entwistle et al. 2007)
-# nu is the MFA
-# alpha is the rotation along the growth direction
-# 2theta is the scattering angle
-from scipy.optimize import nnls
-
-def phiC(nu, alpha, theta):
-    if np.fabs(nu)<0.03:
-        tt = -np.tan(nu)*(np.tan(theta)*np.sin(alpha)-np.cos(alpha))
-    else:
-        tt = np.tan(nu)**2*((np.tan(theta)*np.sin(alpha))**2-np.cos(alpha)**2)
-        tt = np.sqrt(1.-tt)-1
-        tt /= (np.tan(theta)*np.sin(alpha)+np.cos(alpha))*np.tan(nu)
-        
-    return 2.*np.arctan(tt)
-
-def get_MFA_basis_set(phi, prof, w0=3, dmfa=4, q0=1.6, xene=15.0, include_constant=False):
-    """ (phi, prof) is the angular profile, it may not be centered on phi=0, for now get center by weight
-        decompose the profile into basis vectors that correspond to a set of MFAs, from 0 to 90deg, at step size of dmfa
-        data collected at x-ray energy of xene (keV)
-    """
-    
-    wl = 2.*3.1416*1973/(xene*1000)
-    theta0 = .5*np.arcsin(q0*wl/(4.*np.pi))
-
-    idx = ((phi>=-90)&(phi<=90))
-    phi00 = np.sum(phi[idx]*prof[idx]**4)/np.sum(prof[idx]**4)
-    
-    phi_comp = {}
-    phi_comp0 = {}
-    xx = np.linspace(-np.pi, np.pi, 3601)
-    p1 = phi-phi00
-    mfs = np.arange(0, 91, dmfa)
-    for mfa in mfs:
-        h,b = np.histogram(np.degrees(phiC(np.radians(mfa), xx, theta0)), bins=np.linspace(-180,180,182))
-        p0 = (b[1:]+b[:-1])/2 
-        gb = np.exp(-(p0/w0)**2)
-        h = np.convolve(h, gb, mode='same')/np.sum(gb)
-        h1 = np.interp(p1, p0, h)+np.interp(p1, p0+180, h)+np.interp(p1, p0-180, h)
-        phi_comp[mfa] = h1
-        phi_comp0[mfa] = h
-
-    if include_constant:
-        phi_comp['C'] = np.ones_like(h1) # already subtracted
-
-    AA = np.vstack([phi_comp[k] for k in phi_comp.keys()]).T
-    AA0 = np.vstack([phi_comp0[k] for k in phi_comp0.keys()]).T  
-    
-    return mfs,AA
-
-def otsu_mask(img, kernel_size, iters=1, bins=256, erosion_iter=0):
-    img_s = img.copy()
-    img_s[np.isnan(img_s)] = 0
-    img_s[np.isinf(img_s)] = 0
-    for i in range(iters):
-        img_s = img_smooth(img_s, kernel_size)
-    thresh = threshold_otsu(img_s, nbins=bins)
-    mask = np.zeros(img_s.shape)
-    #mask = np.float32(img_s > thresh)
-    mask[img_s > thresh] = 1
-    mask = np.squeeze(mask)
-    if erosion_iter:
-        struct = scipy.ndimage.generate_binary_structure(2, 1)
-        struct1 = scipy.ndimage.iterate_structure(struct, 2).astype(int)
-        mask = scipy.ndimage.binary_erosion(mask, structure=struct1).astype(mask.dtype)
-
-    return mask  
-
-def prep_mfa_data(dt, rot_center, algorithm="pml_hybrid", num_iter=60, abs_cutoff=0.02, base=0):
-    """ base is subtracted as scattering background 
-    """
-    phi = dt.get_h5_attr("overall/Iphi/merged", "phigrid")
-    idx = ((phi>=-90)&(phi<=90))
-    phi0 = phi[idx]
-    mms = []
-    for i in np.arange(len(phi))[idx]:
-        mm = make_map_from_overall_attr(dt, dt.proc_data['overall']['Iphi']['subtracted'][:, i], 
-                                        template_grp="absorption", map_name=None)
-        mms.append(mm)
-        
-    pool = mp.Pool(8)
-    jobs = []
-    kwargs = {'center':rot_center, 'algorithm': algorithm, 'num_iter': num_iter}
-
-    print(f"processing {dt.fn.split('/')[-1][:-7]}          ")
-    for i,mm in enumerate(mms):
-        print(f" map #{i}           \r", end="")
-        jobs.append(pool.map_async(calc_tomo, [(i, mm, kwargs)]))
-
-    pool.close()
-    results = {}
-    for job in jobs:
-        i,data = job.get()[0]
-        tm = dt.proc_data['overall']['tomo']['absorption'].copy()
-        tm.d = data
-        results[i] = tm 
-        print(f"data received for {i}                \r", end="")
-    pool.join() 
-    tms = list(results.values())
-        
-    mm = dt.proc_data['overall']['tomo']['absorption'].copy()
-    mm.d = np.nansum([abs(pp)*(tm.d-base) for pp,tm in zip(phi0,tms)], axis=0)
-    idx = (mm.d>=abs_cutoff)
-    mm.d[~idx] = 0
-    mm.d[idx] /= np.nansum([(tm.d-base) for pp,tm in zip(phi0,tms)], axis=0)[idx]
-    
-    dt.proc_data['overall']['maps']['Iphi'] = mms
-    dt.proc_data['overall']['tomo']['Iphi'] = tms
-    dt.proc_data['overall']['tomo']['mfa_a'] = mm    
-    dt.save_data(save_sns='overall', save_data_keys=['tomo', 'maps'], save_sub_keys=['Iphi', 'mfa_a'])
-    dt.set_h5_attr("overall/maps/Iphi", "phi", phi0)
-    dt.set_h5_attr("overall/tomo/Iphi", "phi", phi0)
-
     
 import xraydb,json
 from scipy.optimize import nnls
@@ -738,46 +596,89 @@ def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin
     
     for sn in dt.samples:
         print(f" processing {sn}           \r", end="")
-        dt.add_proc_data(sn, 'XRF', 'basis', AA)
-        dt.save_data(save_sns=[sn], save_data_keys=['XRF'], save_sub_keys=['basis'])
-        dt.set_h5_attr(f"{sn}/XRF/basis", "ele_list", json.dumps(ele_list))
+        #dt.add_proc_data(sn, 'XRF', 'basis', AA)
+        #dt.save_data(save_sns=[sn], save_data_keys=['XRF'], save_sub_keys=['basis'])
+        #dt.set_h5_attr(f"{sn}/XRF/basis", "ele_list", json.dumps(ele_list))
         dt.extract_attr(sn, xrf_list, nnls_decomp, "xsp3", "data/xsp3_image", from_raw_data=True, 
                         basis_set=AA, n_start=eNstart, n_end=eNend)    
+    sn = 'overall'
+    dt.add_proc_data(sn, 'XRF', 'basis', AA)
+    dt.save_data(save_sns=[sn], save_data_keys=['XRF'], save_sub_keys=['basis'])
+    dt.set_h5_attr(f"{sn}/XRF/basis", "ele_list", json.dumps(ele_list))
     dt.save_data(save_data_keys=['attrs'], save_sub_keys=xrf_list)
     dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)
     
-def plot_data(dt, data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, cmax={}, cm_scale=1., save_fn=None):
+def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
+              cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0,
+              alpha_key="int_cell_Iq", alpha_cutoff=0.03, save_fn=None):
     if isinstance(dt, list):
         data = [t.proc_data['overall'] for t in dt]
     else:
         data = [dt.proc_data[sn] for sn in dt.samples]
-        
+    
     if sub_keys is None:
         sub_keys = dt.proc_data[sn][data_key].keys()
     mm = data[0][data_key][sub_keys[0]]
     asp0 = np.fabs((mm.yc[-1]-mm.yc[0])/(mm.xc[-1]-mm.xc[0]))
     asp = np.fabs((mm.yc[1]-mm.yc[0])/(mm.xc[1]-mm.xc[0]))
     
-    if len(cmax.keys())==0:
-        for k in sub_keys():
-            dd = np.array([d0[data_key][k].d for d0 in data])
-            xx = np.max(dd)
-            xm = np.std(dd)
-            cmax[k] = np.min([xx, xm*4])        
+    cmax0 = {}
+    cmin0 = {}
+    for k in sub_keys:
+        dd = np.hstack([d0[data_key][k].d.flatten() for d0 in data])
+        xx = np.nanmax(dd)
+        xm = np.nanstd(dd)
+        cmax0[k] = np.min([xx, xm*8])
+        cmin0[k] = 0
+    for k in cmax.keys():
+        if k in cmax0.keys():
+            cmax0[k] = cmax[k]
+    for k in cmin.keys():
+        if k in cmin0.keys():
+            cmin0[k] = cmin[k]
     
     Nr = len(data)
     Nc = len(sub_keys)
-    fw = np.min([max_w, max_h/Nr/asp0*Nc])
-    fh = np.min([max_h, max_w/Nc*asp0*Nr])
-    
+    if auto_scale:
+        fw = np.min([max_w, max_h/Nr/asp0*Nc])
+        fh = np.min([max_h, max_w/Nc*asp0*Nr])
+    else:
+        fw = max_w
+        fh = max_h
+                    
     fig,axs = plt.subplots(nrows=Nr, ncols=Nc, figsize=(fw,fh))
+    if Nr==1:
+        axs = np.expand_dims(axs, axis=0)
+    elif Nc==1:
+        axs = np.expand_dims(axs, axis=1)
     
     for i,d0 in enumerate(data):
         for j,k in enumerate(sub_keys):
-            axs[i][j].imshow(d0[data_key][k].d, aspect=asp, clim=[0, cmax[k]*cm_scale])
+            if data_key=='tomo':
+                ma = d0['tomo'][alpha_key].copy()
+                ma.d = ma.d/np.max(ma.d)*2
+                ma.d[ma.d>1] = 1
+                ma.d[ma.d<alpha_cutoff] = 0
+                mask = (ma.d>alpha_cutoff)
+                aspect = 'equal'
+            else:
+                mask=1
+                aspect = 'auto'
+            mm = d0[data_key][k].copy()
+            Nx0 = len(mm.xc)
+            if Nx>Nx0 and data_key=="tomo":
+                pw = int((Nx-Nx0)/2)
+                mm.d = np.pad(mm.d, pw)
+                ma.d = np.pad(ma.d, pw)
+                mask = (ma.d>alpha_cutoff)
+            if k in ["mfa_a"]:  # tomo only
+                axs[i][j].imshow(mm.d, aspect=aspect, alpha=np.sqrt(ma.d), 
+                                 vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale) #, cmap="binary")
+            else:
+                axs[i][j].imshow(mm.d*mask, aspect=aspect, 
+                                 vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap)
             axs[i][j].set_axis_off()
     
-    plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, wspace=0.02, hspace=0.02)
+    plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, wspace=space, hspace=space)
     if save_fn is not None:
         plt.savefig(f"{save_fn}.png", dpi=300)
-        
