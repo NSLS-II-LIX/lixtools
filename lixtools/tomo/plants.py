@@ -81,8 +81,11 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid",
     mms = []
     for i in np.arange(len(phi))[idx]:
         mm = make_map_from_overall_attr(dt, dt.proc_data['overall']['Iphi']['subtracted'][:, i], 
-                                        template_grp="absorption", map_name=None)
+                                        template_grp=ref_key, map_name=None)
         mms.append(mm)
+
+    dt.proc_data['overall']['maps']['Iphi'] = mms
+    dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=['Iphi'])
         
     pool = mp.Pool(8)
     jobs = []
@@ -97,12 +100,12 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid",
     results = {}
     for job in jobs:
         i,data = job.get()[0]
-        tm = dt.proc_data['overall']['tomo']['absorption'].copy()
+        tm = dt.proc_data['overall']['tomo'][ref_key].copy()
         tm.d = data
         results[i] = tm 
         print(f"data received for {i}                \r", end="")
     pool.join() 
-    tms = list(results.values())
+    tms = [results[k] for k in sorted(results.keys())]
         
     mm = dt.proc_data['overall']['tomo'][ref_key].copy()
     mm.d = np.nansum([abs(pp)*(tm.d-base) for pp,tm in zip(phi0,tms)], axis=0)
@@ -110,9 +113,8 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid",
     mm.d[~idx] = 0
     mm.d[idx] /= np.nansum([(tm.d-base) for pp,tm in zip(phi0,tms)], axis=0)[idx]
     
-    dt.proc_data['overall']['maps']['Iphi'] = mms
     dt.proc_data['overall']['tomo']['Iphi'] = tms
     dt.proc_data['overall']['tomo']['mfa_a'] = mm    
-    dt.save_data(save_sns='overall', save_data_keys=['tomo', 'maps'], save_sub_keys=['Iphi', 'mfa_a'])
+    dt.save_data(save_sns='overall', save_data_keys=['tomo'], save_sub_keys=['Iphi', 'mfa_a'])
     dt.set_h5_attr("overall/maps/Iphi", "phi", phi0)
     dt.set_h5_attr("overall/tomo/Iphi", "phi", phi0)

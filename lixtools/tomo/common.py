@@ -1,7 +1,3 @@
-"""
-This file provide functions specific to tomography measurements on plants
-Assume that the growth direction is roughly aligned with the rotation axis
-"""
 import numpy as np
 import pylab as plt
 from py4xs.hdf import h5xs,h5exp,lsh5,find_field
