@@ -361,8 +361,9 @@ class h5xs_an(h5xs):
                 grp = self.fh5[sn]
 
             if "source" in save_attr:
-                if self.attrs[sn]['source']=="": # probably should have not gone this far anyway
-                    raise Exception(f"raw data for {sn} was never loaded ...")
+                # this seems out-of-place
+                #if self.attrs[sn]['source']=="": # probably should have not gone this far anyway
+                #    raise Exception(f"raw data for {sn} was never loaded ...")
                 self.attrs[sn]['source'] = os.path.realpath(fn_raw)
                 grp.attrs['source'] = self.attrs[sn]['source'] 
             if "header" in save_attr:
