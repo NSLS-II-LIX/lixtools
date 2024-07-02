@@ -224,7 +224,6 @@ class h5xs_scan(h5xs_an):
                 continue   # this should be calculated from absorption map
             if an=="transmission" and not recalc_trans_map:
                 continue   # this should be calculated from absorption map
-            maps = []
             
             for sn in self.h5xs.keys():
                 if not 'scan' in self.attrs[sn].keys():
@@ -232,31 +231,44 @@ class h5xs_scan(h5xs_an):
                 if an not in self.proc_data[sn]['attrs'].keys():
                     raise Exception(f"attribue {an} cannot be found for {sn}.")
                 
-                data = self.proc_data[sn]['attrs'][an].reshape(self.attrs[sn]['scan']['shape'])
-                m = MatrixWithCoords()
-                m.d = np.copy(data)
-                m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
-                m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
-                m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
-                m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
-                if self.attrs[sn]['scan']['snaking']:
-                    #print(f"de-snaking {sn}, {an}      \r", end="")
-                    for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
-                        m.d[i] = np.flip(m.d[i])
-                #if map_data_key not in self.proc_data[sn].keys():
-                #    self.proc_data[sn][map_data_key] = {}
-                maps.append(m)
-                self.add_proc_data(sn, map_data_key, an, m)
+                # attr could be 2D, e.g. for multi-element XRF data
+                attr_data = self.proc_data[sn]['attrs'][an]
+                if len(attr_data.shape)==1:
+                    attr_dim = 1
+                    attr_data = [attr_data]
+                else:
+                    attr_dim = attr_data.shape[-1]
+                    attr_data = [attr_data[:,i] for i in range(attr_dim)]
+                maps = []
+                for d0 in attr_data:
+                    data = d0.reshape(self.attrs[sn]['scan']['shape'])
+                    m = MatrixWithCoords()
+                    m.d = np.copy(data)
+                    m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
+                    m.yc = self.attrs[sn]['scan']['slow_axis']['pos']
+                    m.xc_label = self.attrs[sn]['scan']['fast_axis']['motor']
+                    m.yc_label = self.attrs[sn]['scan']['slow_axis']['motor']
+                    if self.attrs[sn]['scan']['snaking']:
+                        #print(f"de-snaking {sn}, {an}      \r", end="")
+                        for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
+                            m.d[i] = np.flip(m.d[i])
+                    #if map_data_key not in self.proc_data[sn].keys():
+                    #    self.proc_data[sn][map_data_key] = {}
+                    maps.append(m)
+                if len(maps)==1:
+                    maps = maps[0]
+                self.add_proc_data(sn, map_data_key, an, maps)
 
             # assume the scans are of the same type, therefore start from the same direction
-            if save_overall:
-                mm = maps[0].merge(maps[1:])
-                #if "overall" not in self.proc_data.keys():
-                #    self.proc_data['overall'] = {}
-                #    self.proc_data['overall'][map_data_key] = {}
-                #if not map_data_key in self.proc_data['overall'].keys():
-                #    self.proc_data['overall'][map_data_key] = {}
-                #self.proc_data['overall'][map_data_key][an] = mm
+            if save_overall:           
+                if attr_dim>1:   # multiple maps per attribute
+                    mm = []                
+                    for i in range(attr_dim):
+                        maps = [self.proc_data[sn][map_data_key][an][i] for sn in self.h5xs.keys()]
+                        mm.append(maps[0].merge(maps[1:]))
+                else:
+                    maps = [self.proc_data[sn][map_data_key][an] for sn in self.h5xs.keys()]
+                    mm = maps[0].merge(maps[1:])
                 self.add_proc_data('overall', map_data_key, an, mm)
         
         if save_overall:
@@ -323,19 +335,37 @@ class h5xs_scan(h5xs_an):
             if debug:
                 print(f"processing {sn}, {an}           \r", end="")
             mm = self.proc_data[sn][map_data_key][an]
-            tm = mm.copy()
+            if isinstance(mm, list):
+                mlen = len(mm)
+                tm = mm[0].copy()
+            else:
+                mlen = 1
+                tm = mm.copy()
             tm.yc = tm.xc
             tm.xc_label = "x"
             tm.yc_label = "y"
-            self.proc_data[sn][tomo_data_key][an] = tm
-            jobs.append(pool.map_async(calc_tomo, [(an, mm, kwargs)]))
+            
+            if mlen==1:
+                self.proc_data[sn][tomo_data_key][an] = tm
+                jobs.append(pool.map_async(calc_tomo, [(an, mm, kwargs)]))
+            else:
+                for i in range(mlen):
+                    self.proc_data[sn][tomo_data_key][an] = tm.copy()
+                    jobs.append(pool.map_async(calc_tomo, [(f"{an}_{i}", mm, kwargs)]))
         
         pool.close()
         for job in jobs:
             an,data = job.get()[0]
-            md = self.proc_data[sn][map_data_key][an].d
-            data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
-            self.proc_data[sn][tomo_data_key][an].d = data
+            if mlen==1:
+                md = self.proc_data[sn][map_data_key][an].d
+                data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
+                self.proc_data[sn][tomo_data_key][an].d = data
+            else:
+                an,i = an.rsplit('_',1)
+                i = int(i)
+                md = self.proc_data[sn][map_data_key][an][i].d
+                data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
+                self.proc_data[sn][tomo_data_key][an][i].d = data
             if debug:
                 print(f"data received for {an}                \r", end="")
         pool.join()

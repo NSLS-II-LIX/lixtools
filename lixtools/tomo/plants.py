@@ -4,20 +4,21 @@ from lixtools.tomo.common import make_map_from_overall_attr
 import numpy as np
 import multiprocessing as mp
 
-def calc_CI(dt: type(h5xs_scan), data_key="tomo", cell_key='int_cell_Iq', amor_key='int_amor_Iq',
+def calc_CI(dt: type(h5xs_scan), sn='overall', data_key="tomo", 
+            cell_key='int_cell_Iq', amor_key='int_amor_Iq',
             sc=1., ref_key="absorption", ref_cutoff=0.02)-> None:
     """ sc is needed to account for the intensity difference between cellulose and amorphous 
         components due to the way they are calculated: span of q-range, shaping factor
     """
-    mm = dt.proc_data['overall'][data_key][cell_key].copy()
-    dc = dt.proc_data['overall'][data_key][cell_key].d
-    da = dt.proc_data['overall'][data_key][amor_key].d*sc
-    idx = (dt.proc_data['overall'][data_key][ref_key].d>=ref_cutoff)
+    mm = dt.proc_data[sn][data_key][cell_key].copy()
+    dc = dt.proc_data[sn][data_key][cell_key].d
+    da = dt.proc_data[sn][data_key][amor_key].d*sc
+    idx = (dt.proc_data[sn][data_key][ref_key].d>=ref_cutoff)
     mm.d[idx] = (dc-da)[idx]/dc[idx]
     mm.d[~idx] = 0
     mm.d[np.isinf(mm.d)] = 0
-    dt.proc_data['overall'][data_key]['CI'] = mm
-    dt.save_data(save_sns='overall', save_data_keys=[data_key], save_sub_keys=['CI'])
+    dt.proc_data[sn][data_key]['CI'] = mm
+    dt.save_data(save_sns=[sn], save_data_keys=[data_key], save_sub_keys=['CI'])
 
 
 # see Rüggeberg et al. J Struct Biol 2013, though there appear to be errors in the equations (Appendix)

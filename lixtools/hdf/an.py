@@ -430,11 +430,12 @@ class h5xs_an(h5xs):
             if len(attr_name)!=data.shape[-1]:
                 raise Exception(f"mismatch size of attr_name ({len(attr_name)}) and data {data.shape}")
             for i in range(len(attr_name)):
-                self.add_proc_data(sn, 'attrs', attr_name[i], data.reshape((-1, len(attr_name)))[:,i])
+                #self.add_proc_data(sn, 'attrs', attr_name[i], data.reshape((-1, len(attr_name)))[:,i])  # this looks weird
+                self.add_proc_data(sn, 'attrs', attr_name[i], data[..., i])   # preserve the shape of data
         else:
             raise Exception(f"don't know how to handle attr_name={attr_name}", quiet=True)
             
-        self.save_data(save_sns=[sn], save_data_keys=['attrs'], save_sub_keys=[attr_name])
+        self.save_data(save_sns=[sn], save_data_keys=['attrs'], save_sub_keys=attr_name)
         
     def process(self, N=8, max_c_size=1024, debug=True):
         if debug is True:

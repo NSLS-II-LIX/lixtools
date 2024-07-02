@@ -557,10 +557,12 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
         return coeff
         
         this is typically for XRF elemental analysis
-        data may have an extra dimension, e.g. (m, 1, n) rather than (m, n)
+        data may have an extra dimension, e.g. (m, 1, n),  or (m, k, n) for multi-element detector, rather than (m, n)
+        when this function is called from extract_attr(), the last index is enumerated
+        therefore the data shape is (m, 1/k), the result shape is (-1, 1/k)
         additionally, work on a limited range of columns (:, n_start:n_end)
     """
-    data1 = data.reshape((-1, data.shape[-1]))[:, n_start:n_end]
+    data1 = data[:, n_start:n_end]
     result = []
     for spec in data1:
         try:
