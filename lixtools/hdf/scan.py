@@ -188,7 +188,7 @@ class h5xs_scan(h5xs_an):
         return mm
     
     def make_map_from_attr(self, save_overall=True, map_data_key='maps', attr_names="transmission", 
-                           ref_int_map=None, ref_trans = 0.213,
+                           ref_int_map=None, ref_trans=-1,
                            correct_for_transsmission=True, recalc_trans_map=True,
                            debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
@@ -302,14 +302,22 @@ class h5xs_scan(h5xs_an):
                     mm.d = -np.log(mm.d/t1)
                     mm.d[mm.d<0] = 0
                     self.proc_data[sname][map_data_key]['absorption'] = mm
-                elif ref_trans>0: 
+                else:
                     mm = self.proc_data[sname][map_data_key]['transmission'].copy()
+                    if ref_trans<=0: 
+                        # try to figure out the ref_trans value
+                        dd = mm.d.flatten()
+                        avg = np.average(dd)
+                        std = np.std(dd)
+                        hh,bb = np.histogram(dd, range=(avg-4*std, avg+4*std), bins=int(np.sqrt(len(dd))))
+                        ref_trans = (bb[1:]+bb[:-1])[np.argmax(hh)]/2
+                    
                     mm.d = -np.log(mm.d/ref_trans)
                     mm.d[mm.d<0] = 0
                     mm.d[np.isnan(mm.d)] = 0
                     self.proc_data[sname][map_data_key]['absorption'] = mm
-                else:
-                    raise Exception("Don't know how to calculate absorption.")
+                #else:
+                #    raise Exception("Don't know how to calculate absorption.")
         
         if debug: print()
         self.save_data(save_data_keys=[map_data_key], quiet=(not debug))

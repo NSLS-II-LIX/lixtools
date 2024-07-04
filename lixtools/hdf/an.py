@@ -415,9 +415,8 @@ class h5xs_an(h5xs):
             check_size was a bandage solution and should be removed
         """
         if from_raw_data:
-            self.h5xs[sn].explicit_open_h5()
-            data = np.array([func(d, **kwargs) for d in self.h5xs[sn].fh5[sn][data_key][sub_key]])
-            self.h5xs[sn].explicit_close_h5()
+            rd = self.h5xs[sn].dset(sub_key, sn=sn, return_reference=False)
+            data = np.array([func(d, **kwargs) for d in rd])
         else:
             data = np.array([func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]])
         if debug:

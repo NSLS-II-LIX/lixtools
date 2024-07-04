@@ -557,20 +557,21 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
         return coeff
         
         this is typically for XRF elemental analysis
-        data may have an extra dimension, e.g. (m, 1, n),  or (m, k, n) for multi-element detector, rather than (m, n)
+        data is typically 3-dimensional, e.g. (m, k, n) for a k-element detector, rather than (m, n)
         when this function is called from extract_attr(), the last index is enumerated
         therefore the data shape is (m, 1/k), the result shape is (-1, 1/k)
         additionally, work on a limited range of columns (:, n_start:n_end)
     """
     data1 = data[:, n_start:n_end]
+    shp = data1.shape
     result = []
-    for spec in data1:
+    for spec in data1.reshape(-1, shp[-1]):
         try:
             coeff,err = nnls(basis_set.T, spec)
         except: # sometimes NNLS fails, it always doesn't work 100% with filtered data
             coeff,err = nnls(basis_set.T, gaussian_filter(spec,sigma))            
         result.append(coeff)
-    return result
+    return np.array(result).reshape(*shp[:-1], -1)
 
 def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin=0.01, pk_width=0.167/2.355):
     """ ele_list, e.g.  ['K_K', 'Ca_K', 'Mn_K', 'Fe_K', 'Cu_K', 'Zn_K']
@@ -594,10 +595,7 @@ def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin
     
     for sn in dt.samples:
         print(f" processing {sn}           \r", end="")
-        #dt.add_proc_data(sn, 'XRF', 'basis', AA)
-        #dt.save_data(save_sns=[sn], save_data_keys=['XRF'], save_sub_keys=['basis'])
-        #dt.set_h5_attr(f"{sn}/XRF/basis", "ele_list", json.dumps(ele_list))
-        dt.extract_attr(sn, xrf_list, nnls_decomp, "xsp3", "data/xsp3_image", from_raw_data=True, 
+        dt.extract_attr(sn, xrf_list, nnls_decomp, "xsp3", "xsp3_image", from_raw_data=True, 
                         basis_set=AA, n_start=eNstart, n_end=eNend)    
     sn = 'overall'
     dt.add_proc_data(sn, 'XRF', 'basis', AA)
