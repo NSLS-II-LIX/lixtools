@@ -306,7 +306,7 @@ class h5xs_scan(h5xs_an):
                     mm = self.proc_data[sname][map_data_key]['transmission'].copy()
                     if ref_trans<=0: 
                         # try to figure out the ref_trans value
-                        dd = mm.d.flatten()
+                        dd = mm.d[~np.isinf(mm.d)].flatten()
                         avg = np.average(dd)
                         std = np.std(dd)
                         hh,bb = np.histogram(dd, range=(avg-4*std, avg+4*std), bins=int(np.sqrt(len(dd))))
