@@ -7,6 +7,7 @@ import numpy as np
 import multiprocessing as mp
 import json,os,copy,tempfile,re
 import tomopy
+from scipy.signal import find_peaks
 
 from .an import h5xs_an
 
@@ -188,7 +189,7 @@ class h5xs_scan(h5xs_an):
         return mm
     
     def make_map_from_attr(self, save_overall=True, map_data_key='maps', attr_names="transmission", 
-                           ref_int_map=None, ref_trans=-1,
+                           ref_int_map=None, ref_trans=-1, pk_prominence_cutoff = 500,
                            correct_for_transsmission=True, recalc_trans_map=True,
                            debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
@@ -310,11 +311,20 @@ class h5xs_scan(h5xs_an):
                         avg = np.average(dd)
                         std = np.std(dd)
                         hh,bb = np.histogram(dd, range=(avg-4*std, avg+4*std), bins=int(np.sqrt(len(dd))))
-                        ref_trans = (bb[1:]+bb[:-1])[np.argmax(hh)]/2
+                        ##ref_trans = (bb[1:]+bb[:-1])[np.argmax(hh)]/2
+                        peaks, properties = find_peaks(hh, width=2)
+                        pk = -1
+                        for i in reversed(range(len(peaks))):
+                            if properties['prominences'][i]>pk_prominence_cutoff:
+                                pk = peaks[i]
+                                break
+                        if pk<0:
+                            raise exception("could not automatically find ref_trans value ...")
+                        ref_trans = (bb[pk]+bb[pk+1])/2
                     
                     mm.d = -np.log(mm.d/ref_trans)
                     mm.d[mm.d<0] = 0
-                    mm.d[np.isnan(mm.d)] = 0
+                    mm.d[np.isinf(mm.d)] = np.nan
                     self.proc_data[sname][map_data_key]['absorption'] = mm
                 #else:
                 #    raise Exception("Don't know how to calculate absorption.")
@@ -357,9 +367,10 @@ class h5xs_scan(h5xs_an):
                 self.proc_data[sn][tomo_data_key][an] = tm
                 jobs.append(pool.map_async(calc_tomo, [(an, mm, kwargs)]))
             else:
+                self.proc_data[sn][tomo_data_key][an] = []
                 for i in range(mlen):
-                    self.proc_data[sn][tomo_data_key][an] = tm.copy()
-                    jobs.append(pool.map_async(calc_tomo, [(f"{an}_{i}", mm, kwargs)]))
+                    self.proc_data[sn][tomo_data_key][an].append(tm.copy())
+                    jobs.append(pool.map_async(calc_tomo, [(f"{an}_{i}", mm[i], kwargs)]))
         
         pool.close()
         for job in jobs:

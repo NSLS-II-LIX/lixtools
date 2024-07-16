@@ -105,13 +105,14 @@ def scf(q, q0=0.08, ex=2):
     return sc
     
 
-def create_XRF_link(dfn, sn, fn):
+def create_XRF_link(dfn, fn):
     """ pyXRF looks for data under /xrfmap/detsum/counts
         this function creates a h5 that contains a external link to the XRF data 
         that belong to dfn/sn
     """
     with h5py.File(fn, 'w') as fh5, h5py.File(dfn, 'r', swmr=True) as dfh5:
         fh5.create_group("/xrfmap/detsum")
+        sn = list(dfh5.keys())[0]
         gn = find_field(dfh5, "xsp3_image", sn)
         fh5["/xrfmap/detsum/counts"] = h5py.ExternalLink(dfn, f"{sn}/{gn}/data/xsp3_image")
 
@@ -608,20 +609,32 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
               cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0,
               alpha_key="int_cell_Iq", alpha_cutoff=0.03, save_fn=None):
     if isinstance(dt, list):
-        data = [t.proc_data['overall'] for t in dt]
+        data0 = [t.proc_data['overall'][data_key] for t in dt]
     else:
-        data = [dt.proc_data[sn] for sn in dt.samples]
+        data0 = [dt.proc_data[sn][data_key] for sn in dt.samples]
     
     if sub_keys is None:
         sub_keys = dt.proc_data[sn][data_key].keys()
-    mm = data[0][data_key][sub_keys[0]]
+    data = []
+    for dd0 in data0:
+        dd = {}
+        for k in sub_keys:
+            if isinstance(dd0[k], list):
+                mm = dd0[k][0].copy()
+                mm.d = np.nansum([m0.d for m0 in dd0[k]], axis=0)
+                dd[k] = mm
+            else:
+                dd[k] = dd0[k]
+        data.append(dd)
+        
+    mm = data[0][sub_keys[0]]
     asp0 = np.fabs((mm.yc[-1]-mm.yc[0])/(mm.xc[-1]-mm.xc[0]))
     asp = np.fabs((mm.yc[1]-mm.yc[0])/(mm.xc[1]-mm.xc[0]))
     
     cmax0 = {}
     cmin0 = {}
     for k in sub_keys:
-        dd = np.hstack([d0[data_key][k].d.flatten() for d0 in data])
+        dd = np.hstack([d0[k].d.flatten() for d0 in data])
         xx = np.nanmax(dd)
         xm = np.nanstd(dd)
         cmax0[k] = np.min([xx, xm*8])
@@ -651,7 +664,7 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
     for i,d0 in enumerate(data):
         for j,k in enumerate(sub_keys):
             if data_key=='tomo':
-                ma = d0['tomo'][alpha_key].copy()
+                ma = d0[alpha_key].copy()
                 ma.d = ma.d/np.max(ma.d)*2
                 ma.d[ma.d>1] = 1
                 ma.d[ma.d<alpha_cutoff] = 0
@@ -660,7 +673,7 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
             else:
                 mask=1
                 aspect = 'auto'
-            mm = d0[data_key][k].copy()
+            mm = d0[k].copy()
             Nx0 = len(mm.xc)
             if Nx>Nx0 and data_key=="tomo":
                 pw = int((Nx-Nx0)/2)
