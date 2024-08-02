@@ -100,10 +100,17 @@ def remove_zingers_1d(q, I, q0=0.15, radius=3000):
     
     return I1
 
+"""
 def scf(q, q0=0.08, ex=2):
     sc = 1./(np.power(q, -ex)+1./q0)
     return sc
-    
+"""
+def scf(q, q0=0.28284, ex=2):
+    """ originally defined as sc = 1./(np.power(q, -ex)+1./q0), with default values q0=0.08, ex=2
+        this equivalent to scf(np.power(q0, 1/ex), ex) in the new definition, or q0=0.28284
+    """
+    sc = 1./(np.power(q, -ex)/np.power(q0, -ex)+1.0)
+    return sc    
 
 def create_XRF_link(dfn, fn):
     """ pyXRF looks for data under /xrfmap/detsum/counts
@@ -357,18 +364,24 @@ def sub_bkg_phi(dt, bkg_x_range=[70, 110], ext="", bkg_thresh=None, mask=None, s
         dt.set_h5_attr(f"{sn}/Iphi{ext}/merged", "bkg", bkg) 
         
 
-def estimate_Nc(x, mm, N=20, offset=0.1):
-    V,S,U = randomized_svd(mm.T, N)
+def estimate_Nc(x, mm, Ni=20, offset=0.1, cutoff=0.01):
+    """ use SVD to estimate the number of eigen vectors needed to describe the dataset
+        cutoff specifies the relative value of the lowest eigen value to be included (default 1% of the first)
+    """
+    V,S,U = randomized_svd(mm.T, Ni)
     print("SVD diagonal elements: ", S)
     eig_vectors = V*S
     coefs = U
 
+    N = len(S[S>=cutoff*S[0]])
+    
     fig, axs = plt.subplots(1,2,figsize=(9,5), gridspec_kw={'width_ratios': [2, 1]})
-    for i in range(eig_vectors.shape[1]):
+    for i in range(N):
         axs[0].plot(x, eig_vectors[:,i]-i*offset)
     axs[1].semilogy(S, "ko")
+    axs[1].semilogy(N-1, S[N-1], "r.")
     
-    return eig_vectors
+    return eig_vectors[:N]
 
 
 def get_evs(x, mms, N=5, max_iter=5000, offset=0.1, use_minibatch=False, **kwargs):
@@ -606,7 +619,7 @@ def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin
     dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)
     
 def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
-              cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0,
+              cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0, aspect='auto',
               alpha_key="int_cell_Iq", alpha_cutoff=0.03, save_fn=None):
     if isinstance(dt, list):
         data0 = [t.proc_data['overall'][data_key] for t in dt]
@@ -672,7 +685,7 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
                 aspect = 'equal'
             else:
                 mask=1
-                aspect = 'auto'
+                aspect = aspect
             mm = d0[k].copy()
             Nx0 = len(mm.xc)
             if Nx>Nx0 and data_key=="tomo":

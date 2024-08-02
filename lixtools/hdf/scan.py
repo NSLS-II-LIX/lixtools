@@ -319,8 +319,10 @@ class h5xs_scan(h5xs_an):
                                 pk = peaks[i]
                                 break
                         if pk<0:
-                            raise exception("could not automatically find ref_trans value ...")
-                        ref_trans = (bb[pk]+bb[pk+1])/2
+                            print("could not automatically find ref_trans value ...")
+                            ref_trans = -ref_trans
+                        else:
+                            ref_trans = (bb[pk]+bb[pk+1])/2
                     
                     mm.d = -np.log(mm.d/ref_trans)
                     mm.d[mm.d<0] = 0
