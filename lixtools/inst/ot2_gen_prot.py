@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from collections import OrderedDict
 from itertools import groupby,chain
-from lixtools.mailin import validate_sample_list
+from lixtools.sol.mailin import validate_sample_list
 from lixtools.inst.webcam import webcam
 
 class sock_client:

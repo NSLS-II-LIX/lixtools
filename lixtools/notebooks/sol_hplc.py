@@ -6,7 +6,7 @@ from py4xs.slnxs import trans_mode
 from py4xs.slnxs import get_font_size
 from py4xs.hdf import h5xs,lsh5,create_linked_files
 from lixtools.hdf import h5sol_HT,h5sol_HPLC
-from lixtools.atsas import gen_atsas_report
+from lixtools.sol.atsas import gen_atsas_report
 import pylab as plt
 from scipy import interpolate,integrate
 
