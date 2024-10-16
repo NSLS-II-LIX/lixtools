@@ -1,6 +1,6 @@
 import time,subprocess,os,uuid,glob
 from dask.distributed import as_completed
-from lixtools.atsas import extract_vals
+from lixtools.sol.atsas import extract_vals
 import numpy as np
 import re
 

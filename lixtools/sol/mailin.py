@@ -44,7 +44,7 @@ def make_plate_QR_code(proposal_id, SAF_id, plate_id, path=""):
         fn = os.path.join(path, fn)
 
     lixtools_dir = os.path.dirname(os.path.realpath(__file__))
-    template_fn = os.path.join(lixtools_dir, "plate_label_template.html")
+    template_fn = os.path.join(lixtools_dir, "sol/plate_label_template.html")
     with open(template_fn, "r") as fh:
         txt = fh.read()
     img = qrcode.make(str_in)

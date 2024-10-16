@@ -432,7 +432,7 @@ def gen_report(fn, atsas_path=''):
         pn = pn[0]
 
     tmp_dir = tempfile.gettempdir()
-    fn0 = os.path.join(pn, f"template_report.ipynb")
+    fn0 = os.path.join(pn, f"sol/template_report.ipynb")
     fn1 = os.path.join(dn, f"{bn}_report.ipynb")
         
     print("preparing the notebook ...")
