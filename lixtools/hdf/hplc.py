@@ -115,7 +115,7 @@ class h5sol_HPLC(h5xs):
 
         if isinstance(smoothing_factor, float) or isinstance(smoothing_factor, int):
             smoothing_factor = smoothing_factor*np.ones(Nc, dtype=float)
-        elif isinstance(poly_order, list):
+        elif isinstance(smoothing_factor, list):
             if len(smoothing_factor)!=Nc:
                 raise Exception(f"the length of smoothing_factor ({smoothing_factor}) must match Nc ({Nc}).")
         else:
