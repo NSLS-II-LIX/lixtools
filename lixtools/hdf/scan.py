@@ -379,13 +379,13 @@ class h5xs_scan(h5xs_an):
             an,data = job.get()[0]
             if mlen==1:
                 md = self.proc_data[sn][map_data_key][an].d
-                data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
+                data *= np.sum(md[~np.isfinite(md)])/np.sum(data[~np.isfinite(data)])
                 self.proc_data[sn][tomo_data_key][an].d = data
             else:
                 an,i = an.rsplit('_',1)
                 i = int(i)
                 md = self.proc_data[sn][map_data_key][an][i].d
-                data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
+                data *= np.sum(md[~np.isfinite(md)])/np.sum(data[~np.isfinite(data)])
                 self.proc_data[sn][tomo_data_key][an][i].d = data
             if debug:
                 print(f"data received for {an}                \r", end="")
