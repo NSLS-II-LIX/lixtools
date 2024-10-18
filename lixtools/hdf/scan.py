@@ -6,10 +6,10 @@ import lixtools,h5py
 import numpy as np
 import multiprocessing as mp
 import json,os,copy,tempfile,re
-import tomopy
 from scipy.signal import find_peaks
 
 from .an import h5xs_an
+from lixtools.tomo.common import calc_tomo
 
 from scipy.signal import find_peaks
 
@@ -49,31 +49,6 @@ def get_hop_from_map(d, xrange, plot=False):
 def get_roi(d, qphirange):
     return np.nanmean(d.apply_symmetry().roi(*qphirange).d)
 
-
-def calc_tomo(args):
-    an,mm,kwargs = args
-    
-    # filter out incomplete data
-    idx = ~np.isnan(mm.d.sum(axis=1))
-    dmap = mm.d[idx, :]
-    yc = mm.yc[idx]
-    xc = mm.xc
-    proj = dmap.reshape((len(yc),1,len(xc)))
-    
-    if "algorithm" in kwargs.keys():
-        algorithm = kwargs.pop("algorithm")
-    else:
-        algorithm = "gridrec"
-        
-    if "center" in kwargs.keys():
-        rot_center = kwargs.pop("center")
-    else:
-        rot_center = tomopy.find_center(proj, np.radians(yc))
-    
-    recon = tomopy.recon(proj, np.radians(yc), center=rot_center, algorithm=algorithm, sinogram_order=False, **kwargs)
-    recon = tomopy.circ_mask(recon, axis=0) #, ratio=0.95)
-    
-    return [an,recon[0,:,:]]
 
 class h5xs_scan(h5xs_an):
     """ keep the detector information
@@ -379,13 +354,13 @@ class h5xs_scan(h5xs_an):
             an,data = job.get()[0]
             if mlen==1:
                 md = self.proc_data[sn][map_data_key][an].d
-                data *= np.sum(md[~np.isfinite(md)])/np.sum(data[~np.isfinite(data)])
+                data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
                 self.proc_data[sn][tomo_data_key][an].d = data
             else:
                 an,i = an.rsplit('_',1)
                 i = int(i)
                 md = self.proc_data[sn][map_data_key][an][i].d
-                data *= np.sum(md[~np.isfinite(md)])/np.sum(data[~np.isfinite(data)])
+                data *= np.sum(md[np.isfinite(md)])/np.sum(data[np.isfinite(data)])
                 self.proc_data[sn][tomo_data_key][an][i].d = data
             if debug:
                 print(f"data received for {an}                \r", end="")

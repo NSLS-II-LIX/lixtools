@@ -174,7 +174,7 @@ def generate_H(ref3D_tomo, sli, angle_list, attn_data, bad_angle_index=[], flag=
     s = ref_tomo.shape
     cx = (s[2]-1) / 2.0       # center of col
     cy = (s[1]-1) / 2.0       # center of row
-
+ 
     H_tot = np.zeros([s[2]*num, s[2]*s[2]])
     k = -1
     for i in range(len(theta)):
@@ -604,7 +604,10 @@ def run_abs_cor(dt, mask3D, pixel_size=0.005, binning=4,
 
     sino['trans'] = dt.proc_data['overall']['maps']['absorption'].d
     for ele in element_list:
-        sino[f"xrf_{ele}"] = dt.proc_data['overall']['maps'][f'xrf_{ele}'].d
+        if isinstance(dt.proc_data['overall']['maps'][f'xrf_{ele}'], list):
+            sino[f"xrf_{ele}"] = dt.proc_data['overall']['maps'][f'xrf_{ele}'][0].d + dt.proc_data['overall']['maps'][f'xrf_{ele}'][1].d
+        else:
+            sino[f"xrf_{ele}"] = dt.proc_data['overall']['maps'][f'xrf_{ele}'].d
 
     print("calculate initial tomograms ...")
     pool = mp.Pool(len(element_list)+1)   # + absorption
@@ -745,7 +748,6 @@ def run_abs_cor(dt, mask3D, pixel_size=0.005, binning=4,
             tmp = rot3D(img_cor[k][0], angle_list_skimage[i])
             prj_bin[k][i] = np.sum(tmp, axis=0, keepdims=True)
 
-
         r = prj_bin[k] / sino_bin[k][0]
         r[np.isnan(r)] = 1
         r[np.isinf(r)] = 1
@@ -772,10 +774,14 @@ def run_abs_cor(dt, mask3D, pixel_size=0.005, binning=4,
     
     for ele in element_list:
         k = f"xrf_{ele}"
-        mms = dt.proc_data['overall']['maps'][k].copy()
+        if isinstance(dt.proc_data['overall']['maps'][k], list):        
+            mms = dt.proc_data['overall']['maps'][k][0].copy()
+            mmt = dt.proc_data['overall']['tomo'][k][0].copy()
+        else:
+            mms = dt.proc_data['overall']['maps'][k].copy()
+            mmt = dt.proc_data['overall']['tomo'][k].copy()
         mms.d = sino_cor[k][0]
         dt.proc_data['overall']['maps'][f'{k}_cor'] = mms
-        mmt = dt.proc_data['overall']['tomo'][k].copy()
         mmt.d = rec_convert[k][0]
         dt.proc_data['overall']['tomo'][f'{k}_cor'] = mmt
         
