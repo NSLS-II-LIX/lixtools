@@ -1,7 +1,7 @@
 import numpy as np
 import tomopy
 from matplotlib.widgets import Slider,Button
-from lixtools.hdf import h5xs_scan
+#from lixtools.hdf import h5xs_scan
 
 def calc_tomo(args):
     an,mm,kwargs = args
@@ -29,8 +29,9 @@ def calc_tomo(args):
     return [an,recon[0,:,:]]
 
 
-def cen_test(dt: type(h5xs_scan), map_key="absorption", test_range=30, clim=[], cmap='bone'):    
+def cen_test(dt, map_key="absorption", test_range=30, clim=[], cmap='bone'):    
     """ adapted from Mingyuan Ge
+        dt: type(h5xs_scan), omitted for now to avoid circular reference
     """
     dsin = dt.proc_data['overall']['maps'][map_key]
     sino = dsin.d
