@@ -1,6 +1,7 @@
 import numpy as np
 import tomopy
 from matplotlib.widgets import Slider,Button
+from lixtools.hdf import h5xs_scan
 
 def calc_tomo(args):
     an,mm,kwargs = args
