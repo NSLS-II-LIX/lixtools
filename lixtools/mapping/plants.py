@@ -1,6 +1,6 @@
 from lixtools.hdf import h5xs_scan
 from lixtools.hdf.scan import calc_tomo
-from lixtools.tomo.common import make_map_from_overall_attr
+from lixtools.mapping.common import make_map_from_overall_attr
 import numpy as np
 import multiprocessing as mp
 
