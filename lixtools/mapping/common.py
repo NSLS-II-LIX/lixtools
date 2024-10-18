@@ -3,7 +3,6 @@ import pylab as plt
 from py4xs.hdf import h5xs,h5exp,lsh5,find_field
 from py4xs.data2d import MatrixWithCoords
 from lixtools.hdf import h5xs_an,h5xs_scan
-from lixtools.hdf.scan import gen_scan_report,calc_tomo
 from py4xs.utils import get_grid_from_bin_ranges
 from lixtools.notebooks import display_data_scanning
 import os,glob,time,PIL,h5py
