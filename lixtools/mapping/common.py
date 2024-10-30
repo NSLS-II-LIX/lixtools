@@ -9,7 +9,7 @@ import os,glob,time,PIL,h5py
 import multiprocessing as mp
 
 import scipy
-from scipy.signal import butter,filtfilt
+from scipy.signal import butter,filtfilt,find_peaks
 from scipy.ndimage import gaussian_filter
 from skimage.restoration import rolling_ball
 
@@ -19,6 +19,42 @@ from sklearn.impute import KNNImputer
 from sklearn.cluster import KMeans
 
 from skimage.registration import phase_cross_correlation as pcc
+
+def hop(phi, I, plot=False):
+    # first need to find the peak and trim data range to -90 to 90 deg
+    # make sure that that phi covers the full azimuthal angle range
+    if np.max(phi)-np.min(phi)<360:
+        raise Exception(f"phi range too narrow: {np.min(phi), np.max(phi)}")
+    pks,_ = find_peaks(I, height=np.max(I)/2, distance=0.4*len(I))    
+    for pk in pks:    
+        if pk>len(phi)/4:
+            break
+    phi0 = phi[pk]
+    
+    idx = tuple([(phi>=phi0-90) & (phi<=phi0+90)])
+    phi00 = np.sum(I[idx]*phi[idx])/np.sum(I[idx])
+    
+    # all angular position should fall within [-90, 90]
+    phi1 = phi-phi00
+    idx = (phi1<-90)
+    idx1 = (phi1>90)
+    phi1[idx] -= 180*(np.floor(phi1[idx]/180+0.5))
+    phi1[idx1] -= 180*(np.floor(phi1[idx1]/180+0.5))
+
+    if plot:
+        plt.figure()
+        plt.plot(phi1,I,'.')
+    
+    phi1 = np.radians(phi1)
+    c2b = np.sum(I*np.cos(phi1)**2)/(np.sum(I))
+    return (2.*c2b-1)/2
+
+def get_hop_from_map(d, xrange, plot=False):
+    phi,I,ee = d.apply_symmetry().line_profile(direction="y", xrange=xrange)
+    return hop(phi, I, plot)
+
+def get_roi(d, qphirange):
+    return np.nanmean(d.apply_symmetry().roi(*qphirange).d)
 
 def BW_lowpass_filter(data, cutoff, order=4):
     b, a = butter(order, cutoff, btype='low', analog=False)

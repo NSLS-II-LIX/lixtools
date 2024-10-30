@@ -6,15 +6,14 @@ import tomopy,h5py,json
 import numpy as np
 import multiprocessing as mp
 
-from scipy.signal import medfilt2d as mf
 from scipy import ndimage
 from scipy.ndimage import shift
 from skimage.transform import resize
 from scipy.signal import savgol_filter
-from scipy.signal import medfilt2d
-from skimage.filters import threshold_otsu
 from matplotlib.widgets import Slider
 from skimage import io
+
+from .common import otsu_mask,recon_mlem
 
 def generate_detector_mask(alfa0, theta0, leng0):
 
@@ -317,64 +316,6 @@ def plot_image_stack(data, cvalues, axis=0, index_init=None, clim=[]):
     im_slider.on_changed(update)
     plt.show()
     return im_slider  
-    
-
-def recon_mlem(args):
-    '''
-    sino: 
-        has a shape of e.g.,(n_angle, FOV_size)
-    '''
-    #k, sino, theta, rot_cen, num_iter=20, init_recon=None
-    k,sino,theta,rot_cen,num_iter = args
-    init_recon=None
-    if not init_recon is None:
-        if len(init_recon.shape) == 2:
-            tmp = np.expand_dims(init_recon, axis=0)
-        else:
-            tmp = init_recon
-        rec = tomopy.recon(np.expand_dims(sino, axis=1), theta, rot_cen, algorithm='mlem', num_iter=num_iter, init_recon=tmp)
-    rec = tomopy.recon(np.expand_dims(sino, axis=1), theta, rot_cen, algorithm='mlem', num_iter=num_iter)
-    return k,rec
-
-     
-def otsu_mask(img, kernal_size, iters=1, bins=256, erosion_iter=0):
-    img_s = img.copy()
-    img_s[np.isnan(img_s)] = 0
-    img_s[np.isinf(img_s)] = 0
-    for i in range(iters):
-        img_s = img_smooth(img_s, kernal_size)
-    thresh = threshold_otsu(img_s, nbins=bins)
-    mask = np.zeros(img_s.shape)
-    #mask = np.float32(img_s > thresh)
-    mask[img_s > thresh] = 1
-    mask = np.squeeze(mask)
-    if erosion_iter:
-        struct = ndimage.generate_binary_structure(2, 1)
-        struct1 = ndimage.iterate_structure(struct, 2).astype(int)
-        mask = ndimage.binary_erosion(mask, structure=struct1).astype(mask.dtype)
-    mask[:erosion_iter+1] = 1
-    mask[-erosion_iter-1:] = 1
-    mask[:, :erosion_iter+1] = 1
-    mask[:, -erosion_iter-1:] = 1
-    return mask  
-
-def img_smooth(img, kernal_size, axis=0):
-    s = img.shape
-    if len(s) == 2:
-        img_stack = img.reshape(1, s[0], s[1])
-    else:
-        img_stack = img.copy()
-
-    if axis == 0:
-        for i in range(img_stack.shape[0]):
-            img_stack[i] = medfilt2d(img_stack[i], kernal_size)
-    elif axis == 1:
-        for i in range(img_stack.shape[1]):
-            img_stack[:, i] = medfilt2d(img_stack[:,i], kernal_size)
-    elif axis == 2:
-        for i in range(img_stack.shape[2]):
-            img_stack[:, :, i] = medfilt2d(img_stack[:,:, i], kernal_size)
-    return img_stack    
     
 def rm_nan(*args):
 
