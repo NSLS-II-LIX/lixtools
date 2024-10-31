@@ -436,7 +436,7 @@ class h5xs_an(h5xs):
             
         self.save_data(save_sns=[sn], save_data_keys=['attrs'], save_sub_keys=attr_name)
         
-    def process(self, N=8, max_c_size=1024, debug=True):
+    def process(self, N=8, max_c_size=1024, apply_symmetry=False, debug=True):
         if debug is True:
             t1 = time.time()
             print("processing started, this may take a while ...")                
@@ -444,7 +444,7 @@ class h5xs_an(h5xs):
         if self.pre_proc=="1D":
             self.process1d(N, max_c_size, debug)
         elif self.pre_proc=="2D":
-            self.process2d(N, max_c_size, debug)
+            self.process2d(N, max_c_size, apply_symmetry, debug)
         else:
             raise Exception(f"cannot deal with pre_proc = {self.pre_proc}")
 
@@ -601,7 +601,7 @@ class h5xs_an(h5xs):
             
 
     @h5_file_access
-    def process2d(self, N=8, max_c_size=1024, debug=True):
+    def process2d(self, N=8, max_c_size=1024, apply_symmetry=False, debug=True):
         """ produce merged q-phi maps
             the bottleneck is reading the data
         """
@@ -670,6 +670,10 @@ class h5xs_an(h5xs):
                     dd2.yc_label = "phi"
                     dd2.d = results[sn][frn0][i]
                     dd2.err = None
+                    
+                    if apply_symmetry:
+                        dd2 = dd2.apply_symmetry()
+                    
                     data.append(dd2)
             self.add_proc_data(sn, 'qphi', 'merged', data)            
             
