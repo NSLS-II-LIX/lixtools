@@ -590,7 +590,10 @@ def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin
         print(f" processing {sn}           \r", end="")
         dt.extract_attr(sn, xrf_list, nnls_decomp, "xsp3", "xsp3_image", from_raw_data=True, 
                         basis_set=AA, n_start=eNstart, n_end=eNend)    
-    sn = 'overall'
+    if save_overall:
+        sn = 'overall'
+    else:
+        sn = dt.samples[0]
     dt.add_proc_data(sn, 'XRF', 'basis', AA)
     dt.save_data(save_sns=[sn], save_data_keys=['XRF'], save_sub_keys=['basis'])
     dt.set_h5_attr(f"{sn}/XRF/basis", "ele_list", json.dumps(ele_list))

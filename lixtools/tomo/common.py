@@ -99,7 +99,12 @@ def cen_test(dt, map_key="absorption", test_range=30, clim=[], cmap='bone'):
     """ adapted from Mingyuan Ge
         dt: type(h5xs_scan), omitted for now to avoid circular reference
     """
-    dsin = dt.proc_data['overall']['maps'][map_key]
+    if len(dt.h5xs)>1:
+        sn = "overall"
+    else:
+        sn = dt.samples[0]
+
+    dsin = dt.proc_data[sn]['maps'][map_key]
     sino = dsin.d
     theta = np.radians(dsin.yc)
     prj = np.expand_dims(sino, axis=1)
@@ -137,7 +142,7 @@ def cen_test(dt, map_key="absorption", test_range=30, clim=[], cmap='bone'):
         
     def save_cen(event):
         print(f"saving rot_cen: {c_slider.val}")
-        dt.set_h5_attr("overall/maps", "rot_cen", c_slider.val)
+        dt.set_h5_attr(f"{sn}/maps", "rot_cen", c_slider.val)
         plt.draw()
    
     c_slider.on_changed(update)
