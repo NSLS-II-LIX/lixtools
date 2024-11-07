@@ -79,6 +79,32 @@ def remove_zingers_1d(q, I, q0=0.15, radius=3000):
     
     return I1
 
+def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26):
+    """ sometimes the response of the incident beam intensity monitor behave strangely
+        the first few data points may be abnominally low
+    """
+    mi = dt.proc_data[sname][map_data_key]['incident'].d
+    mt = dt.proc_data[sname][map_data_key]['transmission'].d
+    
+    m_std = np.std(mi)
+    m_mean = np.mean(mi)
+    idx = (np.fabs(mi-m_mean)>4*m_std) 
+    
+    mt[idx] = np.nan    
+
+    # in principle this can be determined from the transmission sinogram itself
+    # if there is high confidence that there are large areas when beam does not go throug the sample
+    # but there are other complications, e.g. beam intensity monitor not reliable
+    # the transmission value corresponding to empty beam should be well-known
+    #h,b = np.histogram(mt[np.isfinite(mt)], bins=100)
+    #vbkg = (b[0]+b[1])/2
+    ma = -np.log(mt/ref_trans) 
+    ma[ma<0] = 0
+    dt.proc_data[sname][map_data_key]['absorption'].d = ma
+    
+    dt.save_data(save_sns=[sname], save_data_keys=[map_data_key], 
+                 save_sub_keys=['absorption'])
+    
 """
 def scf(q, q0=0.08, ex=2):
     sc = 1./(np.power(q, -ex)+1./q0)
