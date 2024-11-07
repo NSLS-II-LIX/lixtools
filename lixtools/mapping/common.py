@@ -80,8 +80,9 @@ def remove_zingers_1d(q, I, q0=0.15, radius=3000):
     return I1
 
 def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26):
-    """ sometimes the response of the incident beam intensity monitor behave strangely
-        the first few data points may be abnominally low
+    """ sometimes the incident beam intensity monitor behaves strangely
+        the first few data points may be abnomally low
+        assume that the incident intensity should be relatively stable
     """
     mi = dt.proc_data[sname][map_data_key]['incident'].d
     mt = dt.proc_data[sname][map_data_key]['transmission'].d
@@ -89,7 +90,6 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26)
     m_std = np.std(mi)
     m_mean = np.mean(mi)
     idx = (np.fabs(mi-m_mean)>4*m_std) 
-    
     mt[idx] = np.nan    
 
     # in principle this can be determined from the transmission sinogram itself
