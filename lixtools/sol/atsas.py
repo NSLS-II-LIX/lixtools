@@ -312,8 +312,12 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6,
     atsas_create_temp_file(tfn, d1s, skip=sk0, q_cutoff=qc0)
 
     re_autorg = atsas_autorg(tfn, path=path)
-    if re_autorg["Rg"]==0: # autorg not successful,py4xs.slnxs might work
-        re_autorg["I0"],re_autorg["Rg"],re_autorg["fit range"] = d1s.plot_Guinier(no_plot=True)
+    if re_autorg["Rg"]==0: # autorg not successful, py4xs.slnxs might work
+        try:
+            re_autorg["I0"],re_autorg["Rg"],re_autorg["fit range"] = d1s.plot_Guinier(no_plot=True)
+        except: # nothing works
+            ax.text(0.5, 0.5, "unable to estimate $R_g$", horizontalalignment="center")
+            return
         
     if skip<0:
         sk0 = re_autorg["fit range"][0]
