@@ -3,6 +3,9 @@ from lixtools.hdf.scan import calc_tomo
 from lixtools.mapping.common import make_map_from_overall_attr
 import numpy as np
 import multiprocessing as mp
+import cv2 as cv
+import pylab as plt
+from skimage import feature,morphology
 
 def calc_CI(dt: type(h5xs_scan), sn='overall', data_key="tomo", 
             cell_key='int_cell_Iq', amor_key='int_amor_Iq',
@@ -119,3 +122,85 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid",
     dt.save_data(save_sns='overall', save_data_keys=['tomo'], save_sub_keys=['Iphi', 'mfa_a'])
     dt.set_h5_attr("overall/maps/Iphi", "phi", phi0)
     dt.set_h5_attr("overall/tomo/Iphi", "phi", phi0)
+
+    
+def segment_EBWP(tms, n_blur=13, n_blur_pith=25, th_bark=130,
+                 pith_pix=None, bkg_pix=[0,0],
+                 pith_fill_pix_list=[], bark_remove_pix_list=[]):
+    """ create masks for empty/bark/wood/pith
+        the input should be a collection of maps, e.g. tms = dt.proc_data['overall']['tomo']
+        that correspond to the cross-section of a plant stem
+    """
+    d1 = cv.GaussianBlur(tms['int_amor_Iq'].d, (9,9),0)
+    im1 = np.array(d1/np.max(d1)*255, dtype=np.uint8)
+    d2 = cv.GaussianBlur(tms['int_cell_Iq'].d, (9,9),0)
+    im2 = np.array(d2/np.max(d2)*255, dtype=np.uint8)
+    
+    cc = np.array(feature.canny(im2)*255, dtype=np.uint8)
+    cc = cv.GaussianBlur(cc, (n_blur,n_blur), 0)
+    cc[cc>16] = 255
+    cc[cc<=16] = 0
+    _,cc1,_,_ = cv.floodFill(cc, None, bkg_pix, 127)
+    if pith_pix is None:
+        pitch_pix = [int(cc1.shape[0]/2)+10,int(cc1.shape[1]/2)]
+    _,cc2,_,_ = cv.floodFill(cc1, None, pitch_pix, 64)  # needs adjustment
+    
+    bkg_mask = np.array((cc2==127), dtype=np.uint8)
+    kernel = np.ones((n_blur, n_blur), np.uint8) 
+    bkg_mask = cv.morphologyEx(bkg_mask, cv.MORPH_CLOSE, kernel)
+    
+    cc = np.array(feature.canny(im2)*255, dtype=np.uint8)
+    cc = cv.GaussianBlur(cc, (n_blur,n_blur), 0)
+    cc[cc>16] = 255
+    cc[cc<=16] = 0
+    _,cc1,_,_ = cv.floodFill(cc, None, bkg_pix, 127)
+
+    if pith_pix is None:
+        pith_pix = [int(cc1.shape[0]/2)+10,int(cc1.shape[1]/2)]
+    _,cc2,_,_ = cv.floodFill(cc1, None, pith_pix, 64)  # needs adjustment
+
+    pith_mask = np.array((cc2==64), dtype=np.uint8)
+    kernel = np.ones((n_blur_pith, n_blur_pith), np.uint8) 
+    pith_mask = cv.morphologyEx(pith_mask, cv.MORPH_CLOSE, kernel)
+
+    for pix in pith_fill_pix_list:
+        _,bark_mask,_,_ = cv.floodFill(pith_mask, None, pix, 1)  # pixel position
+    
+    plt.figure(figsize=(10,3))
+    plt.subplot(121)
+    _ = plt.hist(im1[(bkg_mask==0)&(pith_mask==0)].flatten(), bins=50)
+    plt.plot([th_bark, th_bark], [0, 5000], "k--", label="bark cutoff")
+    plt.legend(frameon=False)
+    plt.subplot(122)
+    plt.imshow(im1, aspect=1)
+    
+    kernel = np.ones((n_blur, n_blur), np.uint8) 
+    bark_mask = np.array((im2>th_bark)&(bkg_mask==0)&(pith_mask==0), dtype=np.uint8)
+    bark_mask = cv.morphologyEx(bark_mask, cv.MORPH_CLOSE, kernel)
+    bark_mask = cv.morphologyEx(bark_mask, cv.MORPH_OPEN, kernel)
+    #bark_mask = morphology.remove_small_objects(bark_mask, min_size=20)
+
+    for pix in bark_remove_pix_list:
+        _,bark_mask,_,_ = cv.floodFill(bark_mask, None, pix, 0)  # pixel position
+    
+    kernel = np.ones((n_blur,n_blur),np.uint8)
+    woody_mask = np.array((bkg_mask==0)&(bark_mask==0)&(pith_mask==0), dtype=np.uint8)
+    woody_mask = cv.erode(woody_mask, kernel, iterations = 3)
+    woody_mask = cv.dilate(woody_mask, kernel, iterations = 2)
+    #woody_mask = morphology.remove_small_objects(woody_mask, min_size=20)
+    
+    plt.figure(figsize=(10,3))
+    plt.subplot(141)
+    plt.imshow(bkg_mask)
+    plt.axis('off')
+    plt.subplot(142)
+    plt.imshow(pith_mask)
+    plt.axis('off')
+    plt.subplot(143)
+    plt.imshow(woody_mask)
+    plt.axis('off')
+    plt.subplot(144)
+    plt.imshow(bark_mask)
+    plt.axis('off')
+    
+    return {"bkg": bkg_mask, "pith": pith_mask, "wood": woody_mask, "bark": bark_mask}

@@ -8,7 +8,7 @@ from lixtools.notebooks import display_data_scanning
 import os,glob,time,PIL,h5py
 import multiprocessing as mp
 
-import scipy
+import scipy,cv2
 from scipy.signal import butter,filtfilt,find_peaks
 from scipy.ndimage import gaussian_filter
 from skimage.restoration import rolling_ball
@@ -84,13 +84,14 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26)
         the first few data points may be abnomally low
         assume that the incident intensity should be relatively stable
     """
-    mi = dt.proc_data[sname][map_data_key]['incident'].d
-    mt = dt.proc_data[sname][map_data_key]['transmission'].d
+    mi = dt.proc_data[sname][map_data_key]['incident'].d.copy()
+    mt = dt.proc_data[sname][map_data_key]['transmission'].d.copy()
     
     m_std = np.std(mi)
     m_mean = np.mean(mi)
-    idx = (np.fabs(mi-m_mean)>4*m_std) 
-    mt[idx] = np.nan    
+    thresh = np.min([10*m_std, m_mean/3])
+    idx = (np.fabs(mi-m_mean)>thresh) 
+    mt[idx] = np.nan      
 
     # in principle this can be determined from the transmission sinogram itself
     # if there is high confidence that there are large areas when beam does not go throug the sample
@@ -496,7 +497,7 @@ def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, 
         dt.proc_data['overall']['attrs'][f'ev_{name}'] = x
         dt.save_data(save_sns='overall', save_data_keys=['attrs'], save_sub_keys=[f'evs_{name}', f'ev_{name}'], quiet=True)
         
-def make_maps_from_Iq(dts, save_overall=True,
+def make_maps_from_Iq(dts, save_overall=True, int_data="subtracted",
                       q_list={"int_cellulose": [1.05, 1.15], "int_amorphous": [1.25, 1.35], "int_saxs": [0.05, 0.2]},
                       template_grp="transmission", abs_cor=False, quiet=True): 
     sks = list(q_list.keys())
@@ -510,10 +511,10 @@ def make_maps_from_Iq(dts, save_overall=True,
         for sn in sns:
             attr = {}
             q = dt.get_h5_attr(f"{sn}/Iq/subtracted", 'qgrid')
-            Iq = dt.proc_data[sn]['Iq']['subtracted']
+            Iq = dt.proc_data[sn]['Iq'][int_data]
             for k in sks:
                 idx = ((q>=q_list[k][0]) & (q<=q_list[k][1]))
-                attr[k] = np.sum(Iq[:,idx], axis=1)
+                attr[k] = np.average(Iq[:,idx], axis=1)  # averaging instead of summing to facilitate comparison between different attributes
                 if not save_overall:
                     dt.add_proc_data(sn, 'attrs', k, attr[k])
 
@@ -592,7 +593,29 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
         result.append(coeff)
     return np.array(result).reshape(*shp[:-1], -1)
 
-def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin=0.01, pk_width=0.167/2.355):
+def prep_data_from_pyxrf(dt, ele_list, save_overall=True, xrf_fns=None):
+    """ this function populates attrs/xrf_XX based on the results from pyxrf fits
+        these results are expected in files listed in h5fns
+        when h5fns is None, construct the file list assuming the filename is simply appended _xrf after the sample/run name
+    """
+    if xrf_fns is None:
+        xrf_fns = [f"{ssn}_xrf.h5" for ssn in dt.samples]
+    if len(xrf_fns) != len(dt.samples):
+        raise Exception("incorrect length of {xrf_fns}")
+    xrf_list = [f"xrf_{en}" for en in ele_list]
+
+    for xrf_fn,ssn in zip(xrf_fns, dt.samples):
+        with h5py.File(xrf_fn, "r") as fh5:
+            xrf_elist = list(fh5["xrfmap/detsum/xrf_fit_name"][...])    # list of bytes, not strings
+            pyxrf_data = fh5["xrfmap/detsum/xrf_fit"][...]        
+        for ele in ele_list:
+            i = xrf_elist.index(ele.encode("utf-8"))
+            dt.add_proc_data(ssn, 'attrs', f'xrf_{ele}', pyxrf_data[i,:,0])
+    dt.save_data(save_data_keys=['attrs'], save_sub_keys=xrf_list)
+    dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)            
+
+def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
+                  eNstart=310, eNend=1100, eBin=0.01, pk_width=0.167/2.355):
     """ ele_list, e.g.  ['K_K', 'Ca_K', 'Mn_K', 'Fe_K', 'Cu_K', 'Zn_K']
         eNstart,eNend specify the range of data to be used from the MCA, with bin size of eBin keV
         3.1keV is right after the Ar peak
@@ -627,8 +650,8 @@ def prep_XRF_data(dt, ele_list, save_overall=True, eNstart=310, eNend=1100, eBin
     dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)
     
 def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
-              cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0, aspect='auto',
-              alpha_key="int_cell_Iq", alpha_cutoff=0.03, save_fn=None):
+              cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0, aspect='auto', sample_in_row=True, 
+              use_alpha_for_all=False, alpha_key="int_cell_Iq", alpha_cutoff=0.03, flat_alpha=False, save_fn=None):
     if isinstance(dt, list):
         data0 = [t.proc_data['overall'][data_key] for t in dt]
     else:
@@ -638,7 +661,8 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
         sub_keys = dt.proc_data[sn][data_key].keys()
     data = []
     for dd0 in data0:
-        dd = {}
+        dd = {} 
+
         for k in sub_keys:
             if isinstance(dd0[k], list):
                 mm = dd0[k][0].copy()
@@ -646,6 +670,21 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
                 dd[k] = mm
             else:
                 dd[k] = dd0[k]
+        dd['alpha'] = dd0[alpha_key].copy()
+        if flat_alpha:
+            img = dd['alpha'].d
+            img = np.array(img/np.nanmax(img)*255, dtype=np.uint8)
+            blur = cv2.GaussianBlur(img,(5,5),0)
+            ret3,th3 = cv2.threshold(blur,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+            _,msk,_,_ = cv2.floodFill(th3, None, [0,0], 127)
+            dd['alpha'].d = 1.-np.array((msk==127), dtype=float)
+            dd['alpha'].d[dd0[alpha_key].d<alpha_cutoff] = 0
+        else:
+            dd['alpha'].d -= alpha_cutoff
+            dd['alpha'].d[dd['alpha'].d<0] = 0
+            dd['alpha'].d /= (0.5*np.nanmax(dd['alpha'].d))
+            dd['alpha'].d[dd['alpha'].d>1] = 1
+            dd['alpha'].d = np.sqrt(dd['alpha'].d)
         data.append(dd)
         
     mm = data[0][sub_keys[0]]
@@ -667,8 +706,13 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
         if k in cmin0.keys():
             cmin0[k] = cmin[k]
     
-    Nr = len(data)
-    Nc = len(sub_keys)
+    if sample_in_row:
+        Nr = len(data)
+        Nc = len(sub_keys)
+    else:
+        Nc = len(data)
+        Nr = len(sub_keys)
+
     if auto_scale:
         fw = np.min([max_w, max_h/Nr/asp0*Nc])
         fh = np.min([max_h, max_w/Nc*asp0*Nr])
@@ -684,12 +728,19 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
     
     for i,d0 in enumerate(data):
         for j,k in enumerate(sub_keys):
+            
+            if sample_in_row:
+                ax = axs[i][j]
+            else:
+                ax = axs[j][i]
+            
             if data_key=='tomo':
-                ma = d0[alpha_key].copy()
-                ma.d = ma.d/np.max(ma.d)*2
-                ma.d[ma.d>1] = 1
-                ma.d[ma.d<alpha_cutoff] = 0
-                mask = (ma.d>alpha_cutoff)
+                #ma = d0[alpha_key].copy()
+                #ma.d = ma.d/np.max(ma.d)*2
+                #ma.d[ma.d>1] = 1
+                #ma.d[ma.d<alpha_cutoff] = 0
+                #mask = (d0['alpha'].d>alpha_cutoff)
+                mask = d0['alpha'].d
                 aspect = 'equal'
             else:
                 mask=1
@@ -699,15 +750,16 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
             if Nx>Nx0 and data_key=="tomo":
                 pw = int((Nx-Nx0)/2)
                 mm.d = np.pad(mm.d, pw)
-                ma.d = np.pad(ma.d, pw)
-                mask = (ma.d>alpha_cutoff)
-            if k in ["mfa_a"]:  # tomo only
-                axs[i][j].imshow(mm.d, aspect=aspect, alpha=np.sqrt(ma.d), 
-                                 vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale) #, cmap="binary")
+                mask = np.pad(mask, pw)
+                #ma.d = np.pad(ma.d, pw)
+                #mask = (ma.d>alpha_cutoff)
+            if (k in ["mfa_a"]) | use_alpha_for_all:  # tomo only
+                ax.imshow(mm.d, aspect=aspect, alpha=mask, #np.sqrt(mask), 
+                                 vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap) #, cmap="binary")
             else:
-                axs[i][j].imshow(mm.d*mask, aspect=aspect, 
+                ax.imshow(mm.d*mask, aspect=aspect, 
                                  vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap)
-            axs[i][j].set_axis_off()
+            ax.set_axis_off()
     
     plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, wspace=space, hspace=space)
     if save_fn is not None:
