@@ -596,7 +596,7 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
 def prep_data_from_pyxrf(dt, ele_list, save_overall=True, xrf_fns=None):
     """ this function populates attrs/xrf_XX based on the results from pyxrf fits
         these results are expected in files listed in h5fns
-        when h5fns is None, construct the file list assuming the filename is simply appended _xrf after the sample/run name
+        when xrf_fns is None, construct the file list assuming the filename is simply appended _xrf after the sample/run name
     """
     if xrf_fns is None:
         xrf_fns = [f"{ssn}_xrf.h5" for ssn in dt.samples]
@@ -617,18 +617,31 @@ def prep_data_from_pyxrf(dt, ele_list, save_overall=True, xrf_fns=None):
 def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
                   eNstart=310, eNend=1100, eBin=0.01, pk_width=0.167/2.355):
     """ ele_list, e.g.  ['K_K', 'Ca_K', 'Mn_K', 'Fe_K', 'Cu_K', 'Zn_K']
+        pyxrf_param_fn: use this if there is a json file from fitting the summed sepctrum using pyxrf 
+                        in this case ele_list could include "compton"
         eNstart,eNend specify the range of data to be used from the MCA, with bin size of eBin keV
         3.1keV is right after the Ar peak
     """
     xrf_e_range = np.arange(eNstart, eNend)*eBin
+
     fluo_line_profiles = {}
-    for ele in ele_list:
-        e,l = ele.split("_")
-        xls = xraydb.xray_lines(e, l)
-        spec = np.zeros_like(xrf_e_range)
-        for xl in xls.values():
-            spec += np.exp(-(xrf_e_range-xl.energy/1000)**2/(2.*pk_width**2))*xl.intensity
-        fluo_line_profiles[e] = spec
+    if pyxrf_param_fn: # get the basis spectra from the json file
+        with open(pyxrf_param_fn, 'r') as fh:
+            params = json.load(fh)
+        n_bin = np.arange(n_bin_low, n_bin_high)
+        e_select, matv, e_area = construct_linear_model(n_bin, params, elist)
+        for ele in ele_list:
+            i = e_select.index(ele)
+            d = matv[:,i]
+            fluo_line_profiles[i] = d/np.max(d)
+    else: # construct the basis spectra based on the values from xraydb 
+        for ele in ele_list:
+            e,l = ele.split("_")
+            xls = xraydb.xray_lines(e, l)
+            spec = np.zeros_like(xrf_e_range)
+            for xl in xls.values():
+                spec += np.exp(-(xrf_e_range-xl.energy/1000)**2/(2.*pk_width**2))*xl.intensity
+            fluo_line_profiles[e] = spec
     
     AA = np.vstack(list(fluo_line_profiles.values()))
 
