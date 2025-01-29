@@ -18,7 +18,8 @@ HPLC_GUI_par = {
     'xroi_log': False,
     'show_LC1': True,
     'show_LC2': False,
-    'show_2d_log': True,
+    'show_2d_colorscale': "symlog", 
+    #'show_2d_log': True,
     'show_2d_sub': False,
     'cmin': '0.01',
     'cmax': '200',
@@ -111,10 +112,14 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
     
     # vbox2, 2D plot parameters
     vb2Lb = ipywidgets.Label(value="2D map:")
-    x2dMaplogCB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_2d_log'], 
-                                      description='log scale',
-                                      layout=ipywidgets.Layout(width='90%'),
-                                      style = {'description_width': 'initial'})
+    #x2dMaplogCB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_2d_log'], 
+    #                                  description='log scale',
+    #                                  layout=ipywidgets.Layout(width='90%'),
+    #                                  style = {'description_width': 'initial'})
+    x2dMapColorScale = ipywidgets.Dropdown(description='color scale:', 
+                                           options=['symlog', 'linear', 'log', 'asinh'],
+                                           layout=ipywidgets.Layout(width='90%'),
+                                           style = {'description_width': 'initial'})
     x2dMapSubtractedCB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_2d_sub'], 
                                              description='show subtracted',
                                              layout=ipywidgets.Layout(width='95%'),
@@ -127,7 +132,7 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
                              description='vmax:', 
                              layout=ipywidgets.Layout(width='70%'),
                              style = {'description_width': 'initial'})    
-    vbox2 = ipywidgets.VBox([vb2Lb, x2dMapSubtractedCB, x2dMaplogCB, cminTx, cmaxTx], 
+    vbox2 = ipywidgets.VBox([vb2Lb, x2dMapSubtractedCB, x2dMapColorScale, cminTx, cmaxTx], 
                             layout=ipywidgets.Layout(width='15%')) 
     
     # vbox3, backgorund subtraction, export
@@ -217,7 +222,8 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
         HPLC_GUI_par['xroi_log'] = xROIlogCB.value
         HPLC_GUI_par['show_LC1'] = showLC1CB.value
         HPLC_GUI_par['show_LC2'] = showLC2CB.value
-        HPLC_GUI_par['show_2d_log'] = x2dMaplogCB.value
+        HPLC_GUI_par['show_2d_colorscale'] = x2dMapColorScale.value
+        #HPLC_GUI_par['show_2d_log'] = x2dMaplogCB.value
         HPLC_GUI_par['show_2d_sub'] = x2dMapSubtractedCB.value
         HPLC_GUI_par['cmin'] = cminTx.value
         HPLC_GUI_par['cmax'] = cmaxTx.value
@@ -249,7 +255,8 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
         dt.plot_data(plot_merged=(not x2dMapSubtractedCB.value), 
                      q_ranges=q_ranges, logROI=xROIlogCB.value,
                      clim=[float(cminTx.value), float(cmaxTx.value)], 
-                     logScale=x2dMaplogCB.value,
+                     #logScale=x2dMaplogCB.value,
+                     norm=x2dMapColorScale.value,
                      show_hplc_data=[showLC1CB.value, showLC2CB.value], 
                      fig=fig1, ax1=ax1a, ax2=ax1b)
         updateDefaults()
@@ -341,7 +348,8 @@ def display_HPLC_data(fn, atsas_path="", transField="em2_sum_all_mean_value",
     xROIlogCB.observe(updatePlot)
     showLC1CB.observe(updatePlot)
     showLC2CB.observe(updatePlot)
-    x2dMaplogCB.observe(updatePlot)
+    #x2dMaplogCB.observe(updatePlot)
+    x2dMapColorScale.observe(updatePlot)
     x2dMapSubtractedCB.observe(updatePlot)
     
     subModeDd.observe(changeSubtractionMode)

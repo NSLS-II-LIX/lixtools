@@ -413,7 +413,7 @@ class h5sol_HPLC(h5xs):
                   flowrate=-1, plot_merged=False,
                   ymin=-1, ymax=-1, offset=0, uv_xscale=1, uv_yscale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
-                  plot2d=True, logScale=True, clim=[1.e-3, 10.],
+                  plot2d=True, norm='symlog', clim=[1.e-3, 10.],
                   show_hplc_data=[True, False],
                   export_txt=False, debug=False, 
                   fig_w=8, fig_h1=2, fig_h2=3.5, fig=None, ax1=None, ax2=None):
@@ -527,16 +527,8 @@ class h5sol_HPLC(h5xs):
             d2 = d_s + clim[0]/2
             ext = [0, len(data), len(self.qgrid), 0]
             asp = len(d_t)/len(self.qgrid)/(fig_w/fig_h1)
-            if logScale:
-                d2_log = np.copy(d2)
-                d2_log = np.log(d2)
-                clim_log = np.log(clim)
-                #d2_log[np.isnan(d2_log)] = clim_log[0]
-                im = ax2.imshow(d2_log, extent=ext, aspect="auto") 
-                im.set_clim(clim_log)
-            else:
-                im = ax2.imshow(d2, extent=ext, aspect="auto") 
-                im.set_clim(clim)
+            im = ax2.imshow(d2, extent=ext, aspect="auto", norm=norm) 
+            im.set_clim(clim)
             
             gpindex,gpvalues,gplabels = qgrid_labels(self.qgrid)
             ax2.set_yticks(gpindex)
