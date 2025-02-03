@@ -399,11 +399,12 @@ class h5sol_HPLC(h5xs):
                 d_rg[i] = rg
     
         # read HPLC data directly from HDF5
-        hplc_grp = self.fh5[sn+"/hplc/data"]
-        fields = lsh5(self.fh5[sn+'/hplc/data'], top_only=True, silent=True)
         d_hplc = {}
-        for fd in fields:
-            d_hplc[fd] = self.fh5[sn+'/hplc/data/'+fd][...].T   # self.fh5[sn+'/hplc/data/'+fd].value.T
+        if 'hplc' in list(self.fh5[sn].keys()):
+            hplc_grp = self.fh5[sn+"/hplc/data"]
+            fields = lsh5(self.fh5[sn+'/hplc/data'], top_only=True, silent=True)
+            for fd in fields:
+                d_hplc[fd] = self.fh5[sn+'/hplc/data/'+fd][...].T   # self.fh5[sn+'/hplc/data/'+fd].value.T
     
         return dkey,d_t,d_i,d_hplc,d_rg,np.vstack(d_s).T
     
