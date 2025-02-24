@@ -75,7 +75,7 @@ def get_MFA_basis_set(phi, prof, w0=3, dmfa=4, q0=1.6, xene=15.0, include_consta
     
     return mfs,AA
 
-def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid", 
+def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid", data_sub_key="subtracted", 
                   num_iter=60, ref_key="absorption", ref_cutoff=0.02, base=0)-> None:
     """ base is subtracted as scattering background 
     """
@@ -84,7 +84,7 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid",
     phi0 = phi[idx]
     mms = []
     for i in np.arange(len(phi))[idx]:
-        mm = make_map_from_overall_attr(dt, dt.proc_data['overall']['Iphi']['subtracted'][:, i], 
+        mm = make_map_from_overall_attr(dt, dt.proc_data['overall']['Iphi'][data_sub_key][:, i], 
                                         template_grp=ref_key, map_name=None)
         mms.append(mm)
 
