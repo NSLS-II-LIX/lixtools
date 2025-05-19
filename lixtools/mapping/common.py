@@ -19,6 +19,7 @@ from sklearn.impute import KNNImputer
 from sklearn.cluster import KMeans
 
 from skimage.registration import phase_cross_correlation as pcc
+import io
 
 def hop(phi, I, plot=False):
     # first need to find the peak and trim data range to -90 to 90 deg
@@ -663,8 +664,12 @@ def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
     dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)
     
 def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
-              cmap='binary', cmax={}, cmin={}, cm_scale=1., space=0, aspect='auto', sample_in_row=True, 
+              default_cmap='binary', cust_cmaps={}, cmax={}, cmin={}, cm_scale=1., 
+              space=0, aspect='auto', sample_in_row=True, 
               use_alpha_for_all=False, alpha_key="int_cell_Iq", alpha_cutoff=0.03, flat_alpha=False, save_fn=None):
+    """
+        cust_cmaps a dictionary that specifies sub_keys that should use customized colormaps
+    """
     if isinstance(dt, list):
         data0 = [t.proc_data['overall'][data_key] for t in dt]
     else:
@@ -746,17 +751,18 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
                 ax = axs[i][j]
             else:
                 ax = axs[j][i]
-            
+
+            mask = 1
             if data_key=='tomo':
                 #ma = d0[alpha_key].copy()
                 #ma.d = ma.d/np.max(ma.d)*2
                 #ma.d[ma.d>1] = 1
                 #ma.d[ma.d<alpha_cutoff] = 0
                 #mask = (d0['alpha'].d>alpha_cutoff)
+                #if flat_alpha:
                 mask = d0['alpha'].d
                 aspect = 'equal'
             else:
-                mask=1
                 aspect = aspect
             mm = d0[k].copy()
             Nx0 = len(mm.xc)
@@ -766,10 +772,15 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
                 mask = np.pad(mask, pw)
                 #ma.d = np.pad(ma.d, pw)
                 #mask = (ma.d>alpha_cutoff)
+
+            cmap = default_cmap
+            if k in cust_cmaps.keys():
+                cmap = cust_cmaps[k]
             if (k in ["mfa_a"]) | use_alpha_for_all:  # tomo only
                 ax.imshow(mm.d, aspect=aspect, alpha=mask, #np.sqrt(mask), 
                                  vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap) #, cmap="binary")
             else:
+                # if flat_alpha, everything masked has zero value 
                 ax.imshow(mm.d*mask, aspect=aspect, 
                                  vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap)
             ax.set_axis_off()
@@ -777,3 +788,52 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
     plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, wspace=space, hspace=space)
     if save_fn is not None:
         plt.savefig(f"{save_fn}.png", dpi=300)
+
+
+def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), **kwargs):
+    """ mms is a list of MatrixWithCorrds
+        fn is the file to write the video to
+        labels are displayed as the plot tilte in each frame
+        kwargs are passed onto MatrixWithCorrds.plot()
+    """
+    current_backend = plt.get_backend()
+    plt.close('all')
+    plt.switch_backend('agg')
+    
+    if labels is None:
+        labels = ["" for _ in range(len(mms))]
+
+    if len(labels)!=len(mms):
+        raise Exception(f"mms and labels need to have the sane length: {len(mms)} vs {len(labels)} ...")
+    nfr = len(mms)
+    
+    vidwriter = None    
+    frames = []
+    for i in range(nfr):
+        fig,ax = plt.subplots(figsize=figsize)
+        mms[i].plot(ax=ax, **kwargs)
+        plt.subplots_adjust(top=0.85, right=0.85)
+        ax.set_title(labels[i], y=1.1)
+        #plt.show()
+        
+        # this may be slower
+        buf = io.BytesIO()
+        fig.savefig(buf, dpi=200)
+        buf.seek(0)
+        img = PIL.Image.open(buf)
+        
+        # this produces poorer resolution
+        #img = PIL.Image.fromarray(np.array(fig.canvas.buffer_rgba()))
+
+        frames.append(img.copy())
+        plt.close()
+
+    plt.switch_backend(current_backend)
+
+    height,width,layers = np.array(frames[0]).shape
+    vidwriter = cv2.VideoWriter(f"{fn}.mp4", cv2.VideoWriter_fourcc(*"mp4v"), fps, (width,height)) 
+    for img in frames:
+        frame = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+        vidwriter.write(frame)
+    cv2.destroyAllWindows()
+    vidwriter.release()    
