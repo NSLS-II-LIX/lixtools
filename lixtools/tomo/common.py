@@ -216,3 +216,33 @@ def merge_XRF_channels(dt, prefix="xrf_", ref_key="absorption", ref_cutoff=0.02,
     
     dt.save_data(save_sns=["overall"], save_data_keys=[new_map_key])
     dt.set_h5_attr(f"overall/{new_map_key}", "rot_cen", len(xc)/2)
+
+def stack_2d_slices(fns, fn3d, coords=[],
+                    exclude_grps = ['transmission', 'transmitted', 'incident', 'Iphi']):
+    """ stack all 2D maps from fns into 3D datasets in fn3d
+        the varying coordinates of the slices, if given as corrds, are recorded as the "zc" attribute of maps 
+    """
+    dts = []
+    for fn in fns:
+        dt = h5xs_scan(fn)   # must be processed already
+        dt.load_data(samples="overall", read_data_key=['maps'], quiet=True)
+        dts.append(dt)
+
+    dt1 = h5xs_scan(fn3d, [dt.detectors, dt.qgrid])
+    
+    for k in dts[0].proc_data['overall']['maps'].keys(): 
+        if k in ['transmission', 'transmitted', 'incident']:
+            continue
+            
+        if 'xrf' in k:
+            kk = k+"_avg"
+            dd = [dt.proc_data['overall']['maps'][k][0].average(dt.proc_data['overall']['maps'][k][1:4]) for dt in dts]
+        else:
+            kk = k
+            dd = [dt.proc_data['overall']['maps'][k] for dt in dts]
+        dt1.add_proc_data("overall", 'maps', kk, dd)
+    
+    dt1.save_data()
+    if len(coords)==len(fns):
+        dt1.set_h5_attr("overall/maps", "zc", coords)
+

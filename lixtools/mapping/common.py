@@ -221,7 +221,8 @@ def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", phi_range=None, s
     pool = mp.Pool(N)
     jobs = []
     for sn in dt.samples:
-        qgrid = dt.proc_data[dt.samples[0]]['qphi']['merged'][0].xc
+        #qgrid = dt.proc_data[dt.samples[0]]['qphi']['merged'][0].xc    # this wouldn't work if the q-phi maps are already loaded
+        qgrid = dt.get_h5_attr(f"{dt.samples[0]}/qphi", "xc")
         #qgrid = dt.qgrid        # should be the same as above
         sc = scf(qgrid, q0=q0, ex=ex)
         job = pool.map_async(bin_q_data, 

@@ -274,7 +274,7 @@ class h5xs_scan(h5xs_an):
         """ attr_names can be a string or a list
             ref_int_map is used to figure out where tranmission value should be 1
         """
-        if len(self.h5xs)>1:
+        if len(self.h5xs)>1 or len(self.samples)==0:
             sn = "overall"
         else:
             sn = self.samples[0]

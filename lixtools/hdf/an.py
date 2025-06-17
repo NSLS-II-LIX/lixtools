@@ -408,6 +408,29 @@ class h5xs_an(h5xs):
         self.proc_data[sn][data_key][sub_key] = data
     
     @h5_file_access
+    def link_proc_data(self, fns):
+        """ fns are expected to contain sample groups with processed data
+            iterate over all samples, link every processed data groups under this an/an2.h5 file
+
+            example of source dataset: {sn}/processed/qphi/merged/d 
+            example of target dataset: {sn}/qphi/merged/d
+        """
+        #with h5py.File(self.fn, "w") as ff:
+        self.enable_write(True)
+        for s in fns:
+            with h5py.File(s, "r", swmr=True) as fs:
+                for sn in fs.keys():
+                    if not sn in self.samples:
+                        raise Exception(f"mismatched sample: {sn}")
+                    if not "processed" in fs[sn].keys():
+                        continue
+                    for dk in fs[sn]["processed"].keys():
+                        dkk0 = f"{sn}/processed/{dk}"
+                        dkk = f"{sn}/{dk}"
+                        print(dkk)
+                        self.fh5[dkk] = h5py.ExternalLink(s, dkk0)
+    
+    @h5_file_access
     def extract_attr(self, sn, attr_name, func, data_key, sub_key, from_raw_data=False,
                      N=8, check_size=0, debug=False, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
