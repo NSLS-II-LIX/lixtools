@@ -925,7 +925,12 @@ class h5xs_an(h5xs):
             sd = self.proc_data[sn][data_key][sub_key]
             if sd is not None:  # e.g. err for some MatrixWithCoords
                 if sub_key in grp.keys():
-                    grp[sub_key][...] = sd
+                    if grp[sub_key].shape!=sd.shape:
+                        del grp[sub_key]
+                        #fh5.flush()
+                        grp.create_dataset(sub_key, data=sd)
+                    else:
+                        grp[sub_key][...] = sd
                 else:
                     grp.create_dataset(sub_key, data=sd)
                 return
