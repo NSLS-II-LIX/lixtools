@@ -10,16 +10,19 @@ import multiprocessing as mp
 
 import scipy,cv2
 from scipy.signal import butter,filtfilt,find_peaks
-from scipy.ndimage import gaussian_filter
-from skimage.restoration import rolling_ball
+from scipy import ndimage
 
 from sklearn.utils.extmath import randomized_svd
 from sklearn.decomposition import NMF,MiniBatchNMF
 from sklearn.impute import KNNImputer
 from sklearn.cluster import KMeans
 
+from skimage import filters
+from skimage.restoration import rolling_ball
 from skimage.registration import phase_cross_correlation as pcc
 import io
+
+from skbeam.core.fitting.xrf_model import construct_linear_model
 
 def hop(phi, I, plot=False):
     # first need to find the peak and trim data range to -90 to 90 deg
@@ -63,7 +66,7 @@ def BW_lowpass_filter(data, cutoff, order=4):
     return y
 
 def remove_zingers(data, filt=[2, 1.5], thresh=4, thresh_abs=0.1):
-    mmd = gaussian_filter(data, filt)
+    mmd = ndimage.gaussian_filter(data, filt)
     idx = ((data-mmd)>mmd/thresh) & (data>thresh_abs)
     mmd2 = np.copy(data)
     mmd2[idx] = np.nan
@@ -572,7 +575,6 @@ def get_roi(d, qphirange):
     
 import xraydb,json
 from scipy.optimize import nnls
-from scipy.ndimage import gaussian_filter
 
 def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
     """ basis_set x coeff = data
@@ -591,7 +593,7 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
         try:
             coeff,err = nnls(basis_set.T, spec)
         except: # sometimes NNLS fails, it always doesn't work 100% with filtered data
-            coeff,err = nnls(basis_set.T, gaussian_filter(spec,sigma))            
+            coeff,err = nnls(basis_set.T, ndimage.gaussian_filter(spec,sigma))            
         result.append(coeff)
     return np.array(result).reshape(*shp[:-1], -1)
 
@@ -627,15 +629,22 @@ def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
     xrf_e_range = np.arange(eNstart, eNend)*eBin
 
     fluo_line_profiles = {}
+
     if pyxrf_param_fn: # get the basis spectra from the json file
         with open(pyxrf_param_fn, 'r') as fh:
             params = json.load(fh)
-        n_bin = np.arange(n_bin_low, n_bin_high)
-        e_select, matv, e_area = construct_linear_model(n_bin, params, elist)
+        ch_num = np.arange(eNstart, eNend, dtype=int)
+        e_select, matv, e_area = construct_linear_model(ch_num, params, ele_list)
+        """
         for ele in ele_list:
             i = e_select.index(ele)
             d = matv[:,i]
             fluo_line_profiles[i] = d/np.max(d)
+        """
+        for i,ele in enumerate(e_select):
+            d = matv[:,i]
+            fluo_line_profiles[ele] = d/np.max(d)
+        xrf_list = [f"xrf_{en.split('_')[0]}" for en in e_select]
     else: # construct the basis spectra based on the values from xraydb 
         for ele in ele_list:
             e,l = ele.split("_")
@@ -644,11 +653,11 @@ def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
             for xl in xls.values():
                 spec += np.exp(-(xrf_e_range-xl.energy/1000)**2/(2.*pk_width**2))*xl.intensity
             fluo_line_profiles[e] = spec
+        xrf_list = [f"xrf_{en.split('_')[0]}" for en in ele_list]
     
     AA = np.vstack(list(fluo_line_profiles.values()))
 
     print(f"processing {dt.fn.split('/')[-1][:-7]}          ")
-    xrf_list = [f"xrf_{en.split('_')[0]}" for en in ele_list]
     
     for sn in dt.samples:
         print(f" processing {sn}           \r", end="")
@@ -664,10 +673,54 @@ def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
     dt.save_data(save_data_keys=['attrs'], save_sub_keys=xrf_list)
     dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)
     
+def crop(dd, cx, cy, roi_w=0, roi_h=0):
+    if roi_h>0:
+        y1 = int(cy-roi_h/2)
+        y2 = int(cy+roi_h/2)
+    else:
+        y1 = 0
+        y2 = -1
+    if roi_w>0:
+        x1 = int(cx-roi_w/2)
+        x2 = int(cx+roi_w/2)
+    else:
+        x1 = 0
+        x2 = -1
+    return dd[y1:y2, x1:x2]
+
+
+def get_cap_mask(dt, ref_key="xrf_elastic", vmin=60, n_blur=5, n_rep_dilate=3, plot_data=False):
+    """ this is useful for measurements done in glass capillaries
+        the elastic peak from the XRF data can be used to identify the voxels that correspond to the capillary
+        returns the mask for the capillary
+        if plot_data is True, plot the comparison between before and after removal of capillary voxels
+    """
+    kernel = np.ones((n_blur,n_blur),np.uint8)
+    data = dt.proc_data['overall']['tomo'][ref_key]
+    if isinstance(data, list):
+        mm = np.sum([d.d for d in data], axis=0)
+    else:
+        mm = data.d
+    mask = np.array((mm>vmin), dtype=np.float64)
+    mask1 = cv2.GaussianBlur(mask, (n_blur,n_blur),0)
+    mask2 = cv2.dilate(mask1, kernel, iterations = n_rep_dilate)
+    th = filters.threshold_otsu(mask2)
+
+    if plot_data:
+        plt.figure(figsize=(8,4))
+        plt.subplot(121)
+        plt.imshow(mm)
+        plt.subplot(122)
+        mm[mask2>th] = 0
+        plt.imshow(mm)
+    
+    return (mask2>th)
+    
+
 def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
               default_cmap='binary', cust_cmaps={}, cmax={}, cmin={}, cm_scale=1., 
-              space=0, aspect='auto', sample_in_row=True, 
-              use_alpha_for_all=False, alpha_key="int_cell_Iq", alpha_cutoff=0.03, flat_alpha=False, save_fn=None):
+              space=0, aspect='auto', sample_in_row=True, roi_w=0, roi_h=0,
+              use_alpha_for_all=False, alpha_key="int_cell_Iq", alpha_cutoff=0.03, flat_alpha=False, save_fn=None, dpi=300):
     """
         cust_cmaps a dictionary that specifies sub_keys that should use customized colormaps
     """
@@ -746,6 +799,8 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
         axs = np.expand_dims(axs, axis=1)
     
     for i,d0 in enumerate(data):
+
+        cy,cx = ndimage.center_of_mass(d0['alpha'].d)
         for j,k in enumerate(sub_keys):
             
             if sample_in_row:
@@ -755,12 +810,6 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
 
             mask = 1
             if data_key=='tomo':
-                #ma = d0[alpha_key].copy()
-                #ma.d = ma.d/np.max(ma.d)*2
-                #ma.d[ma.d>1] = 1
-                #ma.d[ma.d<alpha_cutoff] = 0
-                #mask = (d0['alpha'].d>alpha_cutoff)
-                #if flat_alpha:
                 mask = d0['alpha'].d
                 aspect = 'equal'
             else:
@@ -778,17 +827,19 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
             if k in cust_cmaps.keys():
                 cmap = cust_cmaps[k]
             if (k in ["mfa_a"]) | use_alpha_for_all:  # tomo only
-                ax.imshow(mm.d, aspect=aspect, alpha=mask, #np.sqrt(mask), 
-                                 vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap) #, cmap="binary")
+                img = crop(mm.d, cx, cy, roi_w=roi_w, roi_h=roi_h)
+                ax.imshow(img, aspect=aspect, alpha=crop(mask, cx, cy, roi_w=roi_w, roi_h=roi_h), #np.sqrt(mask), 
+                          vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap) #, cmap="binary")
             else:
-                # if flat_alpha, everything masked has zero value 
-                ax.imshow(mm.d*mask, aspect=aspect, 
-                                 vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap)
+                # if flat_alpha, everything masked has zero value
+                img = crop(mm.d*mask, cx, cy, roi_w=roi_w, roi_h=roi_h)
+                ax.imshow(img, aspect=aspect, 
+                          vmin=cmin0[k]*cm_scale, vmax=cmax0[k]*cm_scale, cmap=cmap)
             ax.set_axis_off()
     
     plt.subplots_adjust(top=0.98, bottom=0.02, left=0.02, right=0.98, wspace=space, hspace=space)
     if save_fn is not None:
-        plt.savefig(f"{save_fn}.png", dpi=300)
+        plt.savefig(f"{save_fn}.png", dpi=dpi)
 
 
 def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), **kwargs):

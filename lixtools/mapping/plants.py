@@ -5,7 +5,7 @@ import numpy as np
 import multiprocessing as mp
 import cv2 as cv
 import pylab as plt
-from skimage import feature,morphology
+from skimage import feature,morphology,filters
 
 def calc_CI(dt: type(h5xs_scan), sn='overall', data_key="tomo", 
             cell_key='int_cell_Iq', amor_key='int_amor_Iq',
@@ -123,7 +123,7 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid", data_
     dt.set_h5_attr("overall/maps/Iphi", "phi", phi0)
     dt.set_h5_attr("overall/tomo/Iphi", "phi", phi0)
 
-    
+
 def segment_EBWP(tms, n_blur=13, n_blur_pith=25, th_bark=130,
                  pith_pix=None, bkg_pix=[0,0],
                  pith_fill_pix_list=[], bark_remove_pix_list=[]):
