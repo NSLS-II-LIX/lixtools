@@ -222,10 +222,13 @@ def stack_2d_slices(fns, fn3d, coords=[],
     """ stack all 2D maps from fns into 3D datasets in fn3d
         the varying coordinates of the slices, if given as corrds, are recorded as the "zc" attribute of maps 
     """
+
+    from lixtools.hdf import h5xs_scan
+
     dts = []
     for fn in fns:
         dt = h5xs_scan(fn)   # must be processed already
-        dt.load_data(samples="overall", read_data_key=['maps'], quiet=True)
+        dt.load_data(samples="overall", read_data_keys=['maps','tomo'], quiet=True)
         dts.append(dt)
 
     dt1 = h5xs_scan(fn3d, [dt.detectors, dt.qgrid])
@@ -242,7 +245,14 @@ def stack_2d_slices(fns, fn3d, coords=[],
             dd = [dt.proc_data['overall']['maps'][k] for dt in dts]
         dt1.add_proc_data("overall", 'maps', kk, dd)
     
+    for k in dts[0].proc_data['overall']['tomo'].keys(): 
+        if isinstance(dts[0].proc_data['overall']['tomo'][k], list):
+            continue
+        dd = [dt.proc_data['overall']['tomo'][k] for dt in dts]
+        dt1.add_proc_data("overall", 'tomo', k, dd)
+
     dt1.save_data()
     if len(coords)==len(fns):
         dt1.set_h5_attr("overall/maps", "zc", coords)
+        dt1.set_h5_attr("overall/tomo", "zc", coords)
 
