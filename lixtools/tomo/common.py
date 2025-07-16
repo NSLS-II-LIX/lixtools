@@ -9,6 +9,8 @@ from scipy.signal import medfilt2d
 from skimage.transform import radon
 from skimage.filters import threshold_otsu
 
+from fabio.TiffIO import TiffIO
+
 def img_smooth(img, kernal_size, axis=0):
     ''' from Mingyuan Ge
     '''    
@@ -256,3 +258,46 @@ def stack_2d_slices(fns, fn3d, coords=[],
         dt1.set_h5_attr("overall/maps", "zc", coords)
         dt1.set_h5_attr("overall/tomo", "zc", coords)
 
+def save_tomo_as_cmap(dt):
+    fn = dt.fn.replace(".h5", ".cmap")
+    dx = 1000*np.average(np.diff(dt.get_h5_attr("overall/tomo", "xc")))
+    dy = 1000*np.average(np.diff(dt.get_h5_attr("overall/tomo", "yc")))
+    try:
+        dz = 1000*np.average(np.diff(dt.get_h5_attr("overall/tomo", "zc")))
+    except:
+        dz = dx   # assume to be the same as dx if not recorded
+    with h5py.File(fn, "w") as fh:
+        tomos = dt.proc_data['overall']['tomo']
+        for k in tomos.keys():
+            grp = fh.create_group(k)
+            grp.attrs['name'] = k
+            grp.attrs['step'] = (dx, dy, dz)  
+            grp.attrs['origin'] = (0, 0, 0) 
+            tmf = np.dstack([m.d for m in tomos[k]])
+            sc_factor = 255./np.max(tmf)
+            tmi = np.uint16(tmf*sc_factor)
+            grp.create_dataset('tomo', data=tmi)
+
+def save_tomo_as_tiff(dt, scf=10000):
+    """ for people who cannot deal with h5 and prefer things like ImageJ
+        save as 16-bit for now
+        if the scaling factor is not specified, scale to fill 16 bits
+        can save multi-frame tiff
+    """
+    fn = dt.fn.replace(".h5", "")
+    tomos = dt.proc_data['overall']['tomo']
+    for k in tomos.keys():
+        mm = tomos[k]
+        if not isinstance(mm,list):
+            mm = [mm]
+        maxv = np.max(np.dstack([m.d for m in mm]))
+        sc_factor = (256.*256-1)/maxv
+        if scf<sc_factor:
+            sc_factor=scf
+        dest = f"{fn}-{k}.tif"
+        with TiffIO(dest, mode='w') as tif:
+            tif.writeImage(np.uint16(mm[0].d*sc_factor))
+        if len(mm)>1:
+            with TiffIO(dest, mode='r+') as tif:
+                for m in mm[1:]:
+                    tif.writeImage(np.uint16(m.d*sc_factor))
