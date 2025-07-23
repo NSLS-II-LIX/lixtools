@@ -149,16 +149,16 @@ def proc_merge1d(args):
 def proc_merge2d(args):
     #fn,img_grps,sn,debug,parms,bin_ranges = args
     fn,img_grps,sn,frns,debug,parms,bin_ranges = args
+    dQ,dPhi,dMask,dQPhiMask,dWeight = parms
     nframes = len(frns)
+    ndet = len(dQ)
     
     #if debug:
     #    print(img_grps,sn,frns,nframes)
     fh5 = h5py.File(fn, "r", swmr=True)
     if debug is True:
         print(f"processing started: {sn}            \r", end="")
-    s = fh5[img_grps[0]].shape
-    dQ,dPhi,dMask,dQPhiMask,dWeight = parms
-    ndet = len(dQ)
+    #s = fh5[img_grps[0]].shape
     
     cQPhiMask = ~dQPhiMask[0]
     for i in range(1,ndet):
@@ -185,7 +185,45 @@ def proc_merge2d(args):
         print(f"processing completed: {sn}               \r", end="")
         
     fh5.close()
-    #return [sn, ret]
+    return [sn, frn0, ret]
+
+def proc_merge_qxy(args):
+    fn,img_grps,sn,frns,debug,parms,q_N,qrange = args
+    dQx,dQy,dMask,dQxyMask,dWeight = parms
+    nframes = len(frns)
+    ndet = len(dQx)
+    
+    #if debug:
+    #    print(img_grps,sn,frns,nframes)
+    fh5 = h5py.File(fn, "r", swmr=True)
+    if debug is True:
+        print(f"processing started: {sn}            \r", end="")
+    #s = fh5[img_grps[0]].shape
+    
+    cQxyMask = ~dQxyMask[0]
+    for i in range(1,ndet):
+        cQxyMask &= ~dQxyMask[i]   
+    ret = np.zeros(shape=(nframes, q_N, q_N))
+    
+    frn0 = frns[0]
+    for i in range(ndet):
+        data = fh5[img_grps[i]]
+        for n in range(nframes):
+            # there should be no overlap between SAXS and WAXS, not physically possible
+            idx = n+frn0
+            if n%500==0 and debug:
+                print(f"- {img_grps[i]}, {idx}            \r", end="")
+            mm = fh.histogram2d(dQx[i], dQy[i], bins=(q_N, q_N), 
+                                range=(qrange, qrange), weights=data[n+frn0][dMask[i]]) 
+            mm[dQxyMask[i]]/=dWeight[i][dQxyMask[i]]
+            ret[n][mm>0] = mm[mm>0]
+
+    for n in range(nframes):
+        ret[n][cQxyMask] = np.nan
+    if debug is True:
+        print(f"processing completed: {sn}               \r", end="")
+        
+    fh5.close()
     return [sn, frn0, ret]
 
 def proc_merge2d0(args):
@@ -460,6 +498,10 @@ class h5xs_an(h5xs):
         self.save_data(save_sns=[sn], save_data_keys=['attrs'], save_sub_keys=attr_name)
         
     def process(self, N=8, max_c_size=1024, apply_symmetry=False, debug=True):
+        """ generate the pre-processed data for downstream processing
+            the type of data generated depends on self.pre_proc, either "1D" or "2D"
+            with live data processing, this data may be available at the end of the scan
+        """
         if debug is True:
             t1 = time.time()
             print("processing started, this may take a while ...")                
@@ -476,6 +518,105 @@ class h5xs_an(h5xs):
             print("done, time elapsed: %.2f sec" % (t2-t1))   
         self.save_data()
 
+    @h5_file_access
+    def process_qxy(self, qmax, dq, det_ext, apply_symmetry=True,
+                    N=8, max_c_size=1024, debug=True):
+        """ produce qx-qy maps corresponding to each exposure
+            NOTE: it is not feasible have the qx/qy coordinates to span a wide range, due to the very
+                  different sample-to-detector distances for SAXS and WAXS. Instead, produce multiple
+                  qx-qy maps with different q-resolution if needed
+            qgrid is -qmax,dq,qmax, accept a single detector if det_ext is specified
+            save the maps under qxqy/{det_ext}, or qxqy/merged if det_ext is None
+        """
+        if det_ext is None:
+            detectors = self.detectors
+            map_key = "merged"
+        else:
+            detectors = [d for d in self.detectors if d.extension==det_ext]
+            map_key = det_ext
+        qN = 1+2*int(qmax/dq+0.5)
+        qgrid = np.linspace(-qmax, qmax, qN)   # qgrid is evenly spaced at dq and contains q=0
+        qmax += dq/2                           # bin edges is half a bin wdith outside of the max value
+        qrange = [-qmax, qmax]
+        
+        # prepare the info needed for processing
+        dQx = {}
+        dQy = {}
+        dMask = {}
+        dQxyMask = {}
+        dWeight = {}
+        
+        for i in range(len(detectors)):
+            exp = detectors[i].exp_para
+            dMask[i] = ~unflip_array(exp.mask.map, exp.flip)
+            dQx[i] = unflip_array(exp.xQ, exp.flip)[dMask[i]]
+            dQy[i] = unflip_array(exp.yQ, exp.flip)[dMask[i]]
+            ones = np.ones_like(dQx[i])
+            dWeight[i] = fh.histogram2d(dQx[i], dQy[i], bins=(qN, qN), range=(qrange, qrange), weights=ones) 
+            dWeight[i] *= detectors[i].fix_scale
+            dQxyMask[i] = (dWeight[i]>0)
+        parms = [dQx,dQy,dMask,dQxyMask,dWeight]
+        
+        # for corrections: polarization and solid angle 
+        #QPhiCorF = np.ones_like()
+
+        pool = mp.Pool(N)
+        jobs = []
+        results = {}   # scanning data sets are too large, process one sample at a time
+        for sn,dh5 in self.h5xs.items():
+            s = dh5.dshape(dh5.det_name[detectors[0].extension])
+            if len(s)!=3:
+                raise Exception("don't know how to handle shape: ", s)
+            results[sn] = {}
+            img_grps = [dh5.dset(dh5.det_name[det.extension], get_path=True, sn=sn) for det in detectors]
+            for frn_start in range(0, s[0], max_c_size):
+                frn_stop = min(frn_start+max_c_size, s[0])
+                frns = range(frn_start, frn_stop)
+                job = pool.map_async(proc_merge_qxy, [(dh5.fn, img_grps, sn, frns, debug, parms, qN, qrange)])  
+                jobs.append(job)
+                
+        pool.close()
+        for job in jobs:
+            [sn, frn0, data] = job.get()[0]
+            results[sn][frn0] = data
+            print(f"data received: sn={sn}                \r", end="")
+        pool.join()
+
+        dd2 = MatrixWithCoords()
+        dd2.xc = qgrid
+        dd2.xc_label = "qx"
+        dd2.yc = qgrid
+        dd2.yc_label = "qy"
+        dd2.err = None
+        
+        arr_data = {}
+        # this is needed to apply symmatry
+        sm = np.sum(np.asarray([m for m in dQxyMask.values()], dtype=np.int8), axis=0)
+        sm += np.fliplr(np.flipud(sm))
+
+        self.enable_write(True)
+        for sn in results.keys():  
+            arr_ds = np.vstack([results[sn][frn0] for frn0 in sorted(results[sn].keys())])
+            if apply_symmetry:
+                arr_ds[np.isnan(arr_ds)] = 0
+                arr_ds += np.flip(np.flip(arr_ds, axis=2), axis=1)
+                arr_ds /= sm
+            dd2.d = arr_ds[0]
+            self.pack(sn, 'qxy', map_key, arr_data={'d': arr_ds}, data_proto=dd2)
+        self.enable_write(False)
+
+        """
+        for sn in results.keys():  
+            for frn0 in sorted(results[sn].keys()):
+                for i in range(len(results[sn][frn0])):
+                    
+                    if apply_symmetry:
+                        dd2 = dd2.apply_symmetry()
+                    
+                    data.append(dd2)
+            self.add_proc_data(sn, 'qxy', map_key, data)            
+        """
+        
     @h5_file_access
     def process1d0(self, N=8, max_c_size=1024, debug=True):
         qgrid = self.qgrid 
@@ -863,7 +1004,7 @@ class h5xs_an(h5xs):
             print("done.                      ")
     
     @h5_file_access
-    def pack(self, sn, data_key, sub_key, fh5=None):
+    def pack(self, sn, data_key, sub_key, fh5=None, arr_data=None, data_proto=None):
         """ this is for packing processed data, which should be stored under self.proc_data as a dictionary
             sn="overall" is merged from all samples in the h5xs_an object
             the key is the name/identifier of the processed data
@@ -876,15 +1017,23 @@ class h5xs_an(h5xs):
                 e.g. "transmission", "merged", "subtracted", "bkg" 
 
             pack_data() saves the data into the h5 file under the group processed/{data_key}/{sub_key}
+            processed data can be provided as arr_data and data_proto, e.g. when data are a stack of MatrixWithCoords 
+                arr_data should be a dictionary corresponding to the attributes of data_proto
+                data_proto should be an instance of the data of the same class, with values filled (e.g. including MatrixWithCoords.d)
         """
-        data = self.proc_data[sn][data_key][sub_key]
-        if isinstance(data, list):
-            d0 = data[0]
-            n = len(data)
+        if arr_data is None:
+            data = self.proc_data[sn][data_key][sub_key]
+            if isinstance(data, list):
+                d0 = data[0]
+                n = len(data)
+            else:
+                d0 = data
+                n = 1
         else:
-            d0 = data
-            n = 1
-
+            k = list(arr_data.keys())[0]
+            n = arr_data[k].shape[0]
+            d0 = data_proto
+            
         dtype = d0.__class__.__name__
         if not dtype in save_fields.keys():
             print(sn,data_key,sub_key)
@@ -939,7 +1088,6 @@ class h5xs_an(h5xs):
             grp.create_group(sub_key)
         grp = grp[sub_key]
         grp.attrs['len'] = n
-        data = self.proc_data[sn][data_key][sub_key]
         for k in save_fields[dtype]['unique']:
             if not k in d0.__dict__.keys():
                 continue
@@ -948,7 +1096,10 @@ class h5xs_an(h5xs):
             if n==1:
                 sd = d0.__dict__[k]
             else:
-                sd = np.array([d.__dict__[k] for d in data])
+                if arr_data is None:
+                    sd = np.array([d.__dict__[k] for d in data])
+                else:
+                    sd = arr_data[k]
             if k in grp.keys():
                 grp[k][...] = sd
             else:
