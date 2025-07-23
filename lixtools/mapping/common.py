@@ -24,8 +24,11 @@ import io
 from skbeam.core.fitting.xrf_model import construct_linear_model
 
 def hop(phi, I, plot=False):
-    # first need to find the peak and trim data range to -90 to 90 deg
-    # make sure that that phi covers the full azimuthal angle range
+    """
+        2D implementation of Herman's orientation parameter
+        first need to find the peak and trim data range to -90 to 90 deg
+        make sure that that phi covers the full azimuthal angle range
+    """
     if np.max(phi)-np.min(phi)<360:
         raise Exception(f"phi range too narrow: {np.min(phi), np.max(phi)}")
     pks,_ = find_peaks(I, height=np.max(I)/2, distance=0.4*len(I))    
@@ -73,7 +76,7 @@ def remove_zingers(data, filt=[2, 1.5], thresh=4, thresh_abs=0.1):
     return mmd2
 
 def remove_zingers_1d(q, I, q0=0.15, radius=3000):
-    """ expect the data to have high intensity at low xx
+    """ expect the data to have high intensity at low q
         large radius value seems necessary
         alternatively, use small radius, but perform rolling ball on log(I)
     """
@@ -134,6 +137,7 @@ def create_XRF_link(dfn, fn):
 
 def bin_q_data(args):    
     """
+    
     proc_data is dt.proc_data[sn]['qphi']['merged']
     sc is the shaping factor
     q_range=[0.01, 2.5], phi_range=None, dezinger='1d'

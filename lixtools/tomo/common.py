@@ -259,6 +259,10 @@ def stack_2d_slices(fns, fn3d, coords=[],
         dt1.set_h5_attr("overall/tomo", "zc", coords)
 
 def save_tomo_as_cmap(dt):
+    """ save data as ChimeraX maps
+        it's essentiall hdf with a specific layout
+        see example https://github.com/RBVI/ChimeraX/blob/develop/testdata/cell15_timeseries.cmap
+    """
     fn = dt.fn.replace(".h5", ".cmap")
     dx = 1000*np.average(np.diff(dt.get_h5_attr("overall/tomo", "xc")))
     dy = 1000*np.average(np.diff(dt.get_h5_attr("overall/tomo", "yc")))
