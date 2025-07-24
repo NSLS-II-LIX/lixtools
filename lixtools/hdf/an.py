@@ -68,7 +68,6 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
             "slow_axis": {"motor": motors[0], "pos": list(spos)}}  # json doesn't like numpy arrays
 
 
-
 def proc_merge1d0(args):
     """ utility function to perfrom azimuthal average and merge detectors
     """
@@ -313,6 +312,7 @@ class h5xs_an(h5xs):
                     Nphi0 = int(self.fh5.attrs['Nphi'])
                     if Nphi0!=Nphi:
                         print(f"Warning: using existing Nphi={Nphi0} instead of {Nphi}")
+                        Nphi = Nphi0
                 else:
                     self.enable_write(True)
                     self.fh5.attrs['Nphi'] =  Nphi
@@ -604,18 +604,6 @@ class h5xs_an(h5xs):
             dd2.d = arr_ds[0]
             self.pack(sn, 'qxy', map_key, arr_data={'d': arr_ds}, data_proto=dd2)
         self.enable_write(False)
-
-        """
-        for sn in results.keys():  
-            for frn0 in sorted(results[sn].keys()):
-                for i in range(len(results[sn][frn0])):
-                    
-                    if apply_symmetry:
-                        dd2 = dd2.apply_symmetry()
-                    
-                    data.append(dd2)
-            self.add_proc_data(sn, 'qxy', map_key, data)            
-        """
         
     @h5_file_access
     def process1d0(self, N=8, max_c_size=1024, debug=True):
@@ -823,24 +811,28 @@ class h5xs_an(h5xs):
             print(f"data received: sn={sn}                \r", end="")
         pool.join()
 
-        for sn in results.keys():
-            data = []
-            for frn0 in sorted(results[sn].keys()):
-                for i in range(len(results[sn][frn0])):
-                    dd2 = MatrixWithCoords()
-                    dd2.xc = qgrid
-                    dd2.xc_label = "q"
-                    dd2.yc = phigrid
-                    dd2.yc_label = "phi"
-                    dd2.d = results[sn][frn0][i]
-                    dd2.err = None
-                    
-                    if apply_symmetry:
-                        dd2 = dd2.apply_symmetry()
-                    
-                    data.append(dd2)
-            self.add_proc_data(sn, 'qphi', 'merged', data)            
-            
+        arr_data = {}
+        # this is needed to apply symmatry
+        sm = np.sum(np.asarray([m for m in dQPhiMask.values()], dtype=np.int8), axis=0)
+        Np = int(sm.shape[0]/2)
+        sm += np.vstack([sm[Np:,:], sm[:Np,:]])
+        dd2 = MatrixWithCoords()
+        dd2.xc = qgrid
+        dd2.xc_label = "q"
+        dd2.yc = phigrid
+        dd2.yc_label = "phi"
+        dd2.err = None
+        
+        self.enable_write(True)
+        for sn in results.keys():  
+            arr_ds = np.vstack([results[sn][frn0] for frn0 in sorted(results[sn].keys())])
+            if apply_symmetry:
+                arr_ds[np.isnan(arr_ds)] = 0
+                arr_ds += np.hstack([arr_ds[:,Np:,:], arr_ds[:,:Np,:]])
+                arr_ds /= sm
+            dd2.d = arr_ds[0]
+            self.pack(sn, 'qphi', 'merged', arr_data={'d': arr_ds}, data_proto=dd2)
+        self.enable_write(False)
             
     @h5_file_access
     def process2d0(self, N=8, max_c_size=1024, debug=True):
