@@ -348,7 +348,6 @@ class h5xs_an(h5xs):
                     self.h5xs[sn] = fn_raw
                 self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
 
-                
     def list_data(self):
         for sn,d in self.proc_data.items(): 
             print(sn)
@@ -728,9 +727,6 @@ class h5xs_an(h5xs):
                 frns = range(frn_start, frn_stop)
                 job = pool.map_async(proc_merge1d, [(dh5.fn, img_grps, sn, frns, debug, parms, bin_ranges)])  
                 jobs.append(job)
-            #img_grps = [dh5.dset(dh5.det_name[det.extension], get_path=True, sn=sn) for det in detectors]  
-            #job = pool.map_async(proc_merge1d, [(dh5.fn, img_grps, sn, debug, parms, bin_ranges)])  
-            #jobs.append(job)
                 
         pool.close()
         for job in jobs:

@@ -473,7 +473,9 @@ def make_map_from_overall_attr(dt, attr, sname="overall",
 def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, template_grp="int_saxs"):    
     sl = 0
     N = eig_vectors.shape[-1]
-    maps = [f'ev{i}_{name}' for i in range(N)]+[f'res_{name}']
+    maps = [f'ev{i}_{name}' for i in range(N)]
+    if res is not None:
+        maps += [f'res_{name}']
     
     for i in range(len(dts)):
         dt = dts[i]        
@@ -495,8 +497,9 @@ def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, 
         for j in range(N):
             make_map_from_overall_attr(dt, coefs[j,sl:sl+ll], template_grp=template_grp, 
                                        map_name=f'ev{j}_{name}', correct_for_transsmission=abs_cor)
-        make_map_from_overall_attr(dt, res[sl:sl+ll], template_grp=template_grp, 
-                                   map_name=f'res_{name}', correct_for_transsmission=abs_cor)
+        if res is not None:
+            make_map_from_overall_attr(dt, res[sl:sl+ll], template_grp=template_grp, 
+                                       map_name=f'res_{name}', correct_for_transsmission=abs_cor)
         sl += ll
         
         if not 'attrs' in dt.proc_data['overall'].keys():
@@ -504,6 +507,7 @@ def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, 
         dt.proc_data['overall']['attrs'][f'evs_{name}'] = eig_vectors
         dt.proc_data['overall']['attrs'][f'ev_{name}'] = x
         dt.save_data(save_sns='overall', save_data_keys=['attrs'], save_sub_keys=[f'evs_{name}', f'ev_{name}'], quiet=True)
+        dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=maps, quiet=True)
         
 def make_maps_from_Iq(dts, save_overall=True, int_data="subtracted",
                       q_list={"int_cellulose": [1.05, 1.15], "int_amorphous": [1.25, 1.35], "int_saxs": [0.05, 0.2]},
