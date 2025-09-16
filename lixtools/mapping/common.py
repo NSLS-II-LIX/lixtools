@@ -84,6 +84,20 @@ def remove_zingers_1d(q, I, q0=0.15, radius=3000):
     I1[q>q0] = rolling_ball(I[q>q0], radius=radius)
     
     return I1
+    
+def remove_zingers_min(data, q, q0=0.75):
+    """ for the specific case of sharp peaks on powder rings
+        at each q value, the lowest intensity should correspond to the powder patter
+        leave data below q0 intact
+    """
+    mmd = np.copy(data)
+    for i in range(len(q)):
+        if q[i]>q0:
+            mmd[:, i] = np.ones_like(data[:, i])*np.nanmin(data[:, i])
+    mmd[np.isnan(data)] = np.nan
+
+    return mmd
+    
 
 def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26):
     """ sometimes the incident beam intensity monitor behaves strangely
@@ -160,6 +174,8 @@ def bin_q_data(args):
             dm.d = proc_data['merged/d'][i]
             dm = dm.apply_symmetry()
             dm.d = dm.d*sc
+            if dezinger=='min':
+                dm.d = remove_zingers_min(dm.d, dm.xc)
             if dezinger=='2d':
                 dm.d = remove_zingers(dm.d)
             q,dd,ee = dm.line_profile(direction="x", xrange=q_range, yrange=phi_range)
