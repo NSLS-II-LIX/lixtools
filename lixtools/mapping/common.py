@@ -99,7 +99,7 @@ def remove_zingers_min(data, q, q0=0.75):
     return mmd
     
 
-def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26):
+def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=None, inpaint=True):
     """ sometimes the incident beam intensity monitor behaves strangely
         the first few data points may be abnomally low
         assume that the incident intensity should be relatively stable
@@ -107,20 +107,34 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=1.26)
     mi = dt.proc_data[sname][map_data_key]['incident'].d.copy()
     mt = dt.proc_data[sname][map_data_key]['transmission'].d.copy()
     
+    # this will exclude some data points where the intensity may not be reliable
     m_std = np.std(mi)
     m_mean = np.mean(mi)
-    thresh = np.min([10*m_std, m_mean/3])
+    #thresh = np.min([10*m_std, m_mean/3])
+    thresh = np.min([np.sqrt(m_mean)*10, m_mean/3])
     idx = (np.fabs(mi-m_mean)>thresh) 
     mt[idx] = np.nan      
-
+    
     # in principle this can be determined from the transmission sinogram itself
     # if there is high confidence that there are large areas when beam does not go throug the sample
     # but there are other complications, e.g. beam intensity monitor not reliable
     # the transmission value corresponding to empty beam should be well-known
-    #h,b = np.histogram(mt[np.isfinite(mt)], bins=100)
-    #vbkg = (b[0]+b[1])/2
+    mt /= mi
+    if ref_trans is None:
+        h,b = np.histogram(mt[np.isfinite(mt)], bins=100)
+        ref_trans = b[-1] #(b[-1]+b[-2])/2
+    
     ma = -np.log(mt/ref_trans) 
+    ma[np.isinf(ma)] = np.nan
+    if inpaint:
+        ma = cv2.inpaint(np.array(ma, dtype=np.float32), np.array(np.isnan(ma), dtype=np.uint8), 3, cv2.INPAINT_TELEA)
+    
+    # min absorption value should be 0 
+    h,b = np.histogram(ma, bins=100, range=[np.min(ma), np.mean(ma)/10])
+    ni = np.argmax(h)
+    ma -= (b[ni]+b[ni+1])
     ma[ma<0] = 0
+
     dt.proc_data[sname][map_data_key]['absorption'].d = ma
     
     dt.save_data(save_sns=[sname], save_data_keys=[map_data_key], 
@@ -155,6 +169,8 @@ def bin_q_data(args):
     proc_data is dt.proc_data[sn]['qphi']['merged']
     sc is the shaping factor
     q_range=[0.01, 2.5], phi_range=None, dezinger='1d'
+
+    need some way to pass aguments for dezinger    
     """
     fn,sn,sc,q_range,phi_range,dezinger,trans_cor,debug = args
     

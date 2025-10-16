@@ -178,7 +178,8 @@ class h5xs_scan(h5xs_an):
                     attr_data = [attr_data[:,i] for i in range(attr_dim)]
                 maps = []
                 for d0 in attr_data:
-                    data = d0.reshape(self.attrs[sn]['scan']['shape'])
+                    shp = self.attrs[sn]['scan']['shape']
+                    data = d0[:np.prod(shp)].reshape(shp)   # sometimes the electrometers record the last circular buffer twice
                     m = MatrixWithCoords()
                     m.d = np.copy(data)
                     m.xc = self.attrs[sn]['scan']['fast_axis']['pos']
