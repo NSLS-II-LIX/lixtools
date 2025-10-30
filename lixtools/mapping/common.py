@@ -130,7 +130,7 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=None,
         ma = cv2.inpaint(np.array(ma, dtype=np.float32), np.array(np.isnan(ma), dtype=np.uint8), 3, cv2.INPAINT_TELEA)
     
     # min absorption value should be 0 
-    h,b = np.histogram(ma, bins=100, range=[np.min(ma), np.mean(ma)/10])
+    h,b = np.histogram(ma[np.isfinite(ma)], bins=100, range=[np.nanmin(ma), np.nanmean(ma)/10])
     ni = np.argmax(h)
     ma -= (b[ni]+b[ni+1])
     ma[ma<0] = 0
