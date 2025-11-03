@@ -279,7 +279,7 @@ class h5xs_an(h5xs):
         saving and loading
         
     """
-    def __init__(self, *args, 
+    def __init__(self, fn, *args, 
                  Nphi=32, load_raw_data=True, ignore_source_path=False,
                  pre_proc="2D", replace_path={}, quiet=True,
                  **kwargs):
@@ -288,10 +288,10 @@ class h5xs_an(h5xs):
             replace_path: should be a dictionary {old_path: new_path}
                 this is useful when the source raw data files have been moved
         """        
-        fn = args[0]  # any better way to get this?
+        #fn = args[0]  # any better way to get this?
         if not os.path.exists(fn):
             h5py.File(fn, 'w').close()
-        super().__init__(*args, have_raw_data=False, exclude_sample_names=['overall'], **kwargs)
+        super().__init__(fn, *args, have_raw_data=False, exclude_sample_names=['overall'], **kwargs)
         self.proc_data = {}
         self.h5xs = {}
         self.raw_data = {}
@@ -436,7 +436,17 @@ class h5xs_an(h5xs):
         if not sub_key in self.proc_data[sn][data_key].keys():
             return False
         return True
-        
+
+    @h5_file_access
+    def has_data(self, data_key):
+        """ this will check the file instead of proc_data in memory
+        """
+        for sn in self.samples:
+            if not data_key in self.fh5[sn].keys():
+                return False
+
+        return True
+    
     def add_proc_data(self, sn, data_key, sub_key, data):
         if sn not in self.proc_data.keys():
             self.proc_data[sn] = {}

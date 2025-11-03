@@ -17,8 +17,8 @@ class h5xs_scan(h5xs_an):
         copy the meta data, convert raw data into q-phi maps
         can still show data, 
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__(fn, *args, **kwargs)
 
         for sn in self.samples:
             self.attrs[sn]['scan'] = json.loads(self.get_h5_attr(sn, 'scan'))
