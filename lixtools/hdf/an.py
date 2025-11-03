@@ -517,6 +517,7 @@ class h5xs_an(h5xs):
 
         if self.pre_proc=="1D":
             self.process1d(N, max_c_size, debug)
+            self.save_data(save_data_keys=['azi_avg'])
         elif self.pre_proc=="2D":
             self.process2d(N, max_c_size, apply_symmetry, debug)
         else:
@@ -525,7 +526,6 @@ class h5xs_an(h5xs):
         if debug is True:
             t2 = time.time()
             print("done, time elapsed: %.2f sec" % (t2-t1))   
-        self.save_data()
 
     @h5_file_access
     def process_qxy(self, qmax, dq, det_ext, apply_symmetry=True,
@@ -755,8 +755,7 @@ class h5xs_an(h5xs):
                     d1.data = results[sn][frn0][i]
                     d1.err = errbars[sn][frn0][i]
                     data.append(d1)
-            self.add_proc_data(sn, 'azi_avg', 'merged', data)            
-            
+            self.add_proc_data(sn, 'azi_avg', 'merged', data)
 
     @h5_file_access
     def process2d(self, N=8, max_c_size=1024, apply_symmetry=False, debug=True):
