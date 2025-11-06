@@ -334,7 +334,7 @@ def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, 
         
 
 def get_phi_data(dt, q_range=[0.01, 2.5], bkg_q_range=None,
-                 ext="", bkg_thresh=0.6e-2, save_to_overall=True,
+                 sub_key="merged", ext="", bkg_thresh=0.6e-2, save_to_overall=True,
                  dezinger=True, trans_cor=True, debug=False):
     """ 
     """
@@ -367,9 +367,9 @@ def get_phi_data(dt, q_range=[0.01, 2.5], bkg_q_range=None,
         else:
             data = np.array(ret[sn])
 
-        dt.add_proc_data(sn, nm, 'merged', data)
-        dt.save_data(save_sns=sn, save_data_keys=nm, save_sub_keys="merged")
-        dt.set_h5_attr(f"{sn}/{nm}/merged", "phigrid", phi) 
+        dt.add_proc_data(sn, nm, sub_key, data)
+        dt.save_data(save_sns=sn, save_data_keys=nm, save_sub_keys=sub_key)
+        dt.set_h5_attr(f"{sn}/{nm}/{sub_key}", "phigrid", phi) 
 
 def sub_bkg_phi(dt, bkg_x_range=[70, 110], ext="", bkg_thresh=None, mask=None, save_to_overall=True):
     """ bkg_thresh
