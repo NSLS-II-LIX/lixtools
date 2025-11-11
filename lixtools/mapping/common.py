@@ -7,6 +7,8 @@ from lixtools.notebooks import display_data_scanning
 import os,glob,time,PIL,h5py
 import multiprocessing as mp
 
+import dask.array as da
+
 import scipy,cv2
 from scipy.signal import butter,filtfilt,find_peaks
 from scipy import ndimage
@@ -332,6 +334,101 @@ def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, 
         dt.set_h5_attr(f"{sn}/Iq{ext}/subtracted", "qgrid", xcor) 
         dt.set_h5_attr(f"{sn}/Iq{ext}/merged", "bkg", bkg) 
         
+def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):    
+    """    
+    proc_data is dt.proc_data[sn]['qphi']['merged']
+    sc is the shaping factor
+    q_range=[0.01, 2.5], phi_range=None, dezinger='1d'
+    """
+    
+    with h5py.File(fn, "r", swmr=True) as fh5:
+        mm = []
+        Iqphi = da.array(fh5[f'{sn}/qphi/merged/d'])
+        #ref_trans = np.average(fh5[f'{sn}/attrs/transmitted'])   #### this should be given externally
+        trans_data = fh5[f'{sn}/attrs/transmitted'][:Iqphi.shape[0]]/ref_trans    # issue with transmitted data being too long
+
+        dm = fh5[f'{sn}/qphi/merged/d'][0]
+        Np = int(dm.shape[0]/2)
+        w0 = np.zeros_like(dm, dtype=np.int8)
+        w0[~np.isnan(dm)] = 1
+        w = w0 + np.vstack([w0[Np:,:], w0[:Np,:]])
+
+        # apply symmetry
+        Iqphi1 = da.nansum(da.array([Iqphi, da.concatenate([Iqphi[:,Np:,:], Iqphi[:,:Np,:]], axis=1)]), axis=0) / w        
+
+        if dezinger=="median":  # this should be able to get rid of sharp peaks
+            Iq = da.nanmedian(Iqphi1, axis=-2)
+        else:
+            Iq = da.nanmean(Iqphi1, axis=-2)
+        
+        if dezinger=="1d":  # apply some additional smoothing/peak removal opes
+            pass
+
+        if trans_cor:
+            idx = (trans_data>0)
+            Iq[idx,:] = (Iq[idx,:].T/trans_data[idx]).T  
+                
+    return Iq
+
+def get_q_data_dask(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", save_to_overall=True,
+               dezinger=None, trans_cor=True, ref_trans=5000, debug=True):
+    """ 
+    """        
+    with h5py.File(dt.fn, "r") as fh5:
+        qgrid = fh5[f"{dt.samples[0]}/qphi"].attrs['xc']
+    idx = ((qgrid>=q_range[0])&(qgrid<=q_range[1]))
+    sc = scf(qgrid, q0=q0, ex=ex)
+    Iqs = {sn:bin_q_data_dask(dt.fn, sn, sc, dezinger, trans_cor, ref_trans) for sn in dt.samples}
+    
+    nm = f"Iq{ext}"
+    if save_to_overall:
+        sns = ['overall']
+    else:
+        sns = dt.samples
+    
+    for sn in sns:
+        if sn=='overall':
+            data = da.concatenate([Iqs[_][:,idx] for _ in sorted(dt.samples)])
+        else:
+            data = Iqs[sn][:,idx]
+        print("saving data for ", sn)
+        data.to_hdf5(dt.fn, f"{sn}/{nm}/merged")
+        dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
+        dt.set_h5_attr(f"{sn}/{nm}/merged", "qgrid", qgrid[idx]) 
+
+def sub_bkg_q_dask(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, save_to_overall=True):
+    """ bkg_thresh
+    """
+    if save_to_overall:
+        sns = ['overall']
+    else:
+        sns = dt.samples
+    
+    with h5py.File(dt.fn, "r+") as fh5:
+        xcor = fh5[f"{sns[0]}/Iq{ext}/merged"].attrs['qgrid']
+        xidx = ((xcor>bkg_x_range[0]) & (xcor<bkg_x_range[1]))
+        for sn in sns:    
+            data = da.array(fh5[f"{sn}/Iq{ext}/merged"])
+            dd1 = da.average(data[:, xidx], axis=1).compute()
+            if bkg_thresh is None:
+                c,b = np.histogram(dd1[~np.isinf(dd1)], bins=100, range=[0, np.mean(dd1[~np.isinf(dd1)])])
+                bkg_thresh = b[1:][np.argwhere(c>np.max(c)/2)].flatten()[0]
+    
+            bidx = (dd1<bkg_thresh)
+            if len(dd1[bidx])<=1:
+                raise Exception(f"did not find valid bkg (thresh={bkg_thresh}) ...")
+    
+            bkg = da.average(data[bidx,:], axis=0).compute()
+            data -= bkg
+    
+            if "subtracted" in fh5[f"{sn}/Iq{ext}"].keys():
+                fh5[f"{sn}/Iq{ext}/subtracted"][...] = data.compute()
+            else:
+                fh5.create_dataset(f"{sn}/Iq{ext}/subtracted", data=data.compute())
+            #data.to_hdf5(dt.fn, f"{sn}/Iq{ext}/subtracted")
+            fh5[f"{sn}/Iq{ext}/subtracted"].attrs["qgrid"] = xcor 
+            fh5[f"{sn}/Iq{ext}/merged"].attrs["bkg"] = bkg 
+
 
 def get_phi_data(dt, q_range=[0.01, 2.5], bkg_q_range=None,
                  sub_key="merged", ext="", bkg_thresh=0.6e-2, save_to_overall=True,
