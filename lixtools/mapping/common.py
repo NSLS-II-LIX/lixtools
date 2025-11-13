@@ -106,8 +106,13 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=None,
         the first few data points may be abnomally low
         assume that the incident intensity should be relatively stable
     """
-    mi = dt.proc_data[sname][map_data_key]['incident'].d.copy()
-    mt = dt.proc_data[sname][map_data_key]['transmission'].d.copy()
+    mi0 = dt.proc_data[sname][map_data_key]['incident'].d.copy()
+    mt0 = dt.proc_data[sname][map_data_key]['transmitted'].d.copy()
+
+    # sometimes the the incident and transmitted data contain zero values
+    # fill with inpaint
+    mi = cv2.inpaint(np.array(mi0, dtype=np.float32), np.array(mi0==0, dtype=np.uint8), 3, cv2.INPAINT_TELEA)
+    mt = cv2.inpaint(np.array(mt0, dtype=np.float32), np.array(mt0==0, dtype=np.uint8), 3, cv2.INPAINT_TELEA)
     
     # this will exclude some data points where the intensity may not be reliable
     m_std = np.std(mi)
@@ -118,7 +123,7 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=None,
     mt[idx] = np.nan      
     
     # in principle this can be determined from the transmission sinogram itself
-    # if there is high confidence that there are large areas when beam does not go throug the sample
+    # if there is high confidence that there are large areas when beam does not go through the sample
     # but there are other complications, e.g. beam intensity monitor not reliable
     # the transmission value corresponding to empty beam should be well-known
     mt /= mi
@@ -140,7 +145,7 @@ def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=None,
     dt.proc_data[sname][map_data_key]['absorption'].d = ma
     
     dt.save_data(save_sns=[sname], save_data_keys=[map_data_key], 
-                 save_sub_keys=['absorption'])
+                 save_sub_keys=['absorption', 'incident', 'transmitted'])
     
 """
 def scf(q, q0=0.08, ex=2):
@@ -651,7 +656,7 @@ def make_maps_from_Iq(dts, save_overall=True, int_data="subtracted",
         
         for sn in sns:
             attr = {}
-            q = dt.get_h5_attr(f"{sn}/Iq/subtracted", 'qgrid')
+            q = dt.get_h5_attr(f"{sn}/Iq/{int_data}", 'qgrid')
             Iq = dt.proc_data[sn]['Iq'][int_data]
             for k in sks:
                 idx = ((q>=q_list[k][0]) & (q<=q_list[k][1]))

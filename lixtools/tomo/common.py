@@ -102,7 +102,7 @@ def cen_test(dt, map_key="absorption", test_range=30, clim=[], cmap='bone'):
     """ adapted from Mingyuan Ge
         dt: type(h5xs_scan), omitted for now to avoid circular reference
     """
-    if len(dt.h5xs)>1:
+    if 'overall' in dt.proc_data.keys():
         sn = "overall"
     else:
         sn = dt.samples[0]

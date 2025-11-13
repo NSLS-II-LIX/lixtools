@@ -438,12 +438,18 @@ class h5xs_an(h5xs):
         return True
 
     @h5_file_access
-    def has_data(self, data_key):
+    def has_data(self, data_key, sub_key=None):
         """ this will check the file instead of proc_data in memory
         """
+        if len(self.samples)==0:
+            return False
+        
         for sn in self.samples:
             if not data_key in self.fh5[sn].keys():
                 return False
+            if sub_key:
+                if not sub_key in self.fh5[sn][data_key].keys():
+                    return False
 
         return True
     
@@ -476,6 +482,28 @@ class h5xs_an(h5xs):
                         dkk = f"{sn}/{dk}"
                         print(dkk)
                         self.fh5[dkk] = h5py.ExternalLink(s, dkk0)
+        self.enable_write(False)
+
+    def link_proc_data1(self, fns):
+        """ fns are expected to contain sample groups with processed data
+            iterate over all samples, link every processed data groups under this an/an2.h5 file
+
+            example of source dataset: {sn}/processed/qphi/merged/d 
+            example of target dataset: {sn}/qphi/merged/d
+        """
+        with h5py.File(self.fn, "r+") as ff:
+            for s in fns:
+                with h5py.File(s, "r", swmr=True) as fs:
+                    for sn in fs.keys():
+                        if not sn in self.samples:
+                            raise Exception(f"mismatched sample: {sn}")
+                        if not "processed" in fs[sn].keys():
+                            continue
+                        for dk in fs[sn]["processed"].keys():
+                            dkk0 = f"{sn}/processed/{dk}"
+                            dkk = f"{sn}/{dk}"
+                            print(dkk)
+                            ff[dkk] = h5py.ExternalLink(s, dkk0)
     
     @h5_file_access
     def extract_attr(self, sn, attr_name, func, data_key, sub_key, from_raw_data=False,

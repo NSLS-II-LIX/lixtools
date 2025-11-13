@@ -275,7 +275,7 @@ class h5xs_scan(h5xs_an):
         """ attr_names can be a string or a list
             ref_int_map is used to figure out where tranmission value should be 1
         """
-        if len(self.h5xs)>1 or len(self.samples)==0:
+        if 'overall' in self.proc_data.keys():
             sn = "overall"
         else:
             sn = self.samples[0]
@@ -283,7 +283,7 @@ class h5xs_scan(h5xs_an):
         if isinstance(attr_names, str):
             attr_names = [attr_names]
             
-        if not tomo_data_key in self.proc_data[sn]:
+        if not tomo_data_key in self.proc_data[sn].keys():
             self.proc_data[sn][tomo_data_key] = {}
             
         pool = mp.Pool(len(attr_names))
