@@ -341,13 +341,11 @@ def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, 
         
 def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):    
     """    
-    proc_data is dt.proc_data[sn]['qphi']['merged']
     sc is the shaping factor
     q_range=[0.01, 2.5], phi_range=None, dezinger='1d'
     """
     
     with h5py.File(fn, "r", swmr=True) as fh5:
-        mm = []
         Iqphi = da.array(fh5[f'{sn}/qphi/merged/d'])
         #ref_trans = np.average(fh5[f'{sn}/attrs/transmitted'])   #### this should be given externally
         trans_data = fh5[f'{sn}/attrs/transmitted'][:Iqphi.shape[0]]/ref_trans    # issue with transmitted data being too long
@@ -367,7 +365,7 @@ def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):
             Iq = da.nanmean(Iqphi1, axis=-2)
         
         if dezinger=="1d":  # apply some additional smoothing/peak removal opes
-            pass
+            print("1d dezinger for bin_q_data_dask() not yet implemented")
 
         if trans_cor:
             idx = (trans_data>0)
@@ -434,7 +432,61 @@ def sub_bkg_q_dask(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=N
             fh5[f"{sn}/Iq{ext}/subtracted"].attrs["qgrid"] = xcor 
             fh5[f"{sn}/Iq{ext}/merged"].attrs["bkg"] = bkg 
 
+def bin_phi_data_dask(fn,sn,q_range,dezinger,trans_cor,ref_trans):    
+    """
+    q_range, bkg_q_range, dezinger=True
+    """
+    
+    with h5py.File(fn, "r", swmr=True) as fh5:
+        Iqphi = da.array(fh5[f'{sn}/qphi/merged/d'])
+        #ref_trans = np.average(fh5[f'{sn}/attrs/transmitted'])   #### this should be given externally
+        trans_data = fh5[f'{sn}/attrs/transmitted'][:Iqphi.shape[0]]/ref_trans    # issue with transmitted data being too long
+        qgrid = fh5[f'{sn}/qphi'].attrs['xc']
+        
+        dm = fh5[f'{sn}/qphi/merged/d'][0]
+        Np = int(dm.shape[0]/2)
+        w0 = np.zeros_like(dm, dtype=np.int8)
+        w0[~np.isnan(dm)] = 1
+        w = w0 + np.vstack([w0[Np:,:], w0[:Np,:]])
 
+        # apply symmetry
+        Iqphi1 = da.nansum(da.array([Iqphi, da.concatenate([Iqphi[:,Np:,:], Iqphi[:,:Np,:]], axis=1)]), axis=0) / w        
+
+        idx = ((qgrid>=q_range[0])&(qgrid<=q_range[1]))
+        if dezinger:
+            Iphi = da.nanmedian(Iqphi1[:,:,idx], axis=-1)
+        else:
+            Iphi = da.nanmean(Iqphi1[:,:,idx], axis=-1)
+
+        if trans_cor:
+            idx = (trans_data>0)
+            Iphi[idx,:] = (Iphi[idx,:].T/trans_data[idx]).T  
+                
+    return Iphi
+
+def get_phi_data_dask(dt, q_range=[0.01, 2.5], 
+                 sub_key="merged", ext="", bkg_thresh=0.6e-2, save_to_overall=True,
+                 dezinger=True, trans_cor=True, ref_trans=5000, debug=False):
+    """ 
+    """
+    Iphis = {sn:bin_phi_data_dask(dt.fn, sn, q_range, dezinger, trans_cor, ref_trans) for sn in dt.samples}
+    nm = f"Iphi{ext}"
+    if save_to_overall:
+        sns = ['overall']
+    else:
+        sns = dt.samples
+    
+    for sn in sns:
+        if sn=='overall':
+            data = da.concatenate([Iphis[_] for _ in sorted(dt.samples)])
+        else:
+            data = Iphis[sn]
+        print("saving data for ", sn)
+        data.to_hdf5(dt.fn, f"{sn}/{nm}/{sub_key}")
+        dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
+        dt.set_h5_attr(f"{sn}/{nm}/{sub_key}", "q_range", q_range) 
+
+    
 def get_phi_data(dt, q_range=[0.01, 2.5], bkg_q_range=None,
                  sub_key="merged", ext="", bkg_thresh=0.6e-2, save_to_overall=True,
                  dezinger=True, trans_cor=True, debug=False):
