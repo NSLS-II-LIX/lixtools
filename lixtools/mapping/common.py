@@ -8,6 +8,7 @@ import os,glob,time,PIL,h5py
 import multiprocessing as mp
 
 import dask.array as da
+from dask.diagnostics import ProgressBar
 
 import scipy,cv2
 from scipy.signal import butter,filtfilt,find_peaks
@@ -395,7 +396,8 @@ def get_q_data_dask(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", save_to_over
         else:
             data = Iqs[sn][:,idx]
         print("saving data for ", sn)
-        data.to_hdf5(dt.fn, f"{sn}/{nm}/merged")
+        with ProgressBar():
+            data.to_hdf5(dt.fn, f"{sn}/{nm}/merged")
         dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
         dt.set_h5_attr(f"{sn}/{nm}/merged", "qgrid", qgrid[idx]) 
 
@@ -482,7 +484,8 @@ def get_phi_data_dask(dt, q_range=[0.01, 2.5],
         else:
             data = Iphis[sn]
         print("saving data for ", sn)
-        data.to_hdf5(dt.fn, f"{sn}/{nm}/{sub_key}")
+        with ProgressBar():
+            data.to_hdf5(dt.fn, f"{sn}/{nm}/{sub_key}")
         dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
         dt.set_h5_attr(f"{sn}/{nm}/{sub_key}", "q_range", q_range) 
 
