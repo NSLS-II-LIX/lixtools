@@ -240,13 +240,15 @@ def stack_2d_slices(fns, fn3d, coords=[],
         if k in ['transmission', 'transmitted', 'incident']:
             continue
             
-        if 'xrf' in k:
-            kk = k+"_avg"
-            dd = [dt.proc_data['overall']['maps'][k][0].average(dt.proc_data['overall']['maps'][k][1:4]) for dt in dts]
+        #if 'xrf' in k:
+        #    kk = k+"_avg"
+        #    dd = [dt.proc_data['overall']['maps'][k][0].average(dt.proc_data['overall']['maps'][k][1:4]) for dt in dts]
+        if isinstance(dts[0].proc_data['overall']['maps'][k], list):
+            print(f"sinogram for {k} is a list, don't know what to do ...")
         else:
             kk = k
             dd = [dt.proc_data['overall']['maps'][k] for dt in dts]
-        dt1.add_proc_data("overall", 'maps', kk, dd)
+            dt1.add_proc_data("overall", 'maps', kk, dd)
     
     for k in dts[0].proc_data['overall']['tomo'].keys(): 
         if isinstance(dts[0].proc_data['overall']['tomo'][k], list):
