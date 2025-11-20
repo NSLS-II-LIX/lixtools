@@ -91,6 +91,9 @@ def calc_tomo(args):
         rot_center = kwargs.pop("center")
     else:
         rot_center = tomopy.find_center(proj, np.radians(yc))
+
+    if algorithm in ['gridrec', 'fbp'] and 'num_iter' in kwargs.keys():
+        del kwargs['num_iter']
     
     recon = tomopy.recon(proj, np.radians(yc), center=rot_center, algorithm=algorithm, sinogram_order=False, **kwargs)
     recon = tomopy.circ_mask(recon, axis=0) #, ratio=0.95)
@@ -220,7 +223,7 @@ def merge_XRF_channels(dt, prefix="xrf_", ref_key="absorption", ref_cutoff=0.02,
     dt.save_data(save_sns=["overall"], save_data_keys=[new_map_key])
     dt.set_h5_attr(f"overall/{new_map_key}", "rot_cen", len(xc)/2)
 
-def stack_2d_slices(fns, fn3d, coords=[],
+def stack_2d_slices(fns, fn3d, coords=[], replace_path={},
                     exclude_grps = ['transmission', 'transmitted', 'incident', 'Iphi']):
     """ stack all 2D maps from fns into 3D datasets in fn3d
         the varying coordinates of the slices, if given as corrds, are recorded as the "zc" attribute of maps 
@@ -230,7 +233,7 @@ def stack_2d_slices(fns, fn3d, coords=[],
 
     dts = []
     for fn in fns:
-        dt = h5xs_scan(fn)   # must be processed already
+        dt = h5xs_scan(fn, replace_path=replace_path)   # must be processed already
         dt.load_data(samples="overall", read_data_keys=['maps','tomo'], quiet=True)
         dts.append(dt)
 

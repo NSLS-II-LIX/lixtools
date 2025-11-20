@@ -100,7 +100,35 @@ def remove_zingers_min(data, q, q0=0.75):
     mmd[np.isnan(data)] = np.nan
 
     return mmd
+
+def fix_maps(dt, sname='overall', map_data_key="maps", map_sub_keys=None,
+             fix_inf=True, fix_neg=False):
+
+    if not (fix_inf or fix_neg):
+        return
     
+    if map_sub_keys is None:
+        map_sub_keys = list(dt.proc_data[sname][map_data_key].keys())
+    elif isinstance(map_sub_keys, str):
+        map_sub_keys = [map_sub_keys]
+    elif not isinstance(map_sub_keys, list):
+        raise Exception(f"Don't know how to handle map_sub_keys: {map_sub_keys}")
+    
+    for k in map_sub_keys:
+        maps = dt.proc_data[sname][map_data_key][k]
+        if not isinstance(maps, list):
+            maps = [maps]
+        for m in maps:
+            mask = np.zeros_like(m.d, dtype=np.uint8)
+            if fix_inf:
+                mask[np.isinf(m.d)] = 1
+            if fix_neg:
+                mask[m.d<0] = 1
+
+            m.d = cv2.inpaint(np.array(m.d, dtype=np.float32), mask, 3, cv2.INPAINT_TELEA)
+
+    dt.save_data(sname, [map_data_key], map_sub_keys)
+        
 
 def fix_absorption_map(dt, sname='overall', map_data_key="maps", ref_trans=None, inpaint=True):
     """ sometimes the incident beam intensity monitor behaves strangely
