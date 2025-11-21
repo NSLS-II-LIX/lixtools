@@ -75,11 +75,12 @@ def get_MFA_basis_set(phi, prof, w0=3, dmfa=4, q0=1.6, xene=15.0, include_consta
     
     return mfs,AA
 
-def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid", data_sub_key="subtracted", 
-                  num_iter=60, ref_key="absorption", ref_cutoff=0.02, base=0)-> None:
+def prep_mfa_data(dt: type(h5xs_scan), rot_center, data_sub_key, 
+                  algorithm="pml_hybrid", num_iter=60, ref_key="absorption", ref_cutoff=0.02, base=0)-> None:
     """ base is subtracted as scattering background 
     """
-    phi = dt.get_h5_attr("overall/Iphi/merged", "phigrid")
+    #phi = dt.get_h5_attr(f"overall/Iphi/{data_sub_key}", "phigrid")
+    phi = dt.phigrid
     idx = ((phi>=-90)&(phi<=90))
     phi0 = phi[idx]
     mms = []
@@ -88,8 +89,8 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid", data_
                                         template_grp=ref_key, map_name=None)
         mms.append(mm)
 
-    dt.proc_data['overall']['maps']['Iphi'] = mms
-    dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=['Iphi'])
+    dt.proc_data['overall']['maps'][f'Iphi-{data_sub_key}'] = mms
+    dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=[f'Iphi-{data_sub_key}'])
         
     pool = mp.Pool(8)
     jobs = []
@@ -117,11 +118,12 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, algorithm="pml_hybrid", data_
     mm.d[~idx] = 0
     mm.d[idx] /= np.nansum([(tm.d-base) for pp,tm in zip(phi0,tms)], axis=0)[idx]
     
-    dt.proc_data['overall']['tomo']['Iphi'] = tms
-    dt.proc_data['overall']['tomo']['mfa_a'] = mm    
-    dt.save_data(save_sns='overall', save_data_keys=['tomo'], save_sub_keys=['Iphi', 'mfa_a'])
-    dt.set_h5_attr("overall/maps/Iphi", "phi", phi0)
-    dt.set_h5_attr("overall/tomo/Iphi", "phi", phi0)
+    dt.proc_data['overall']['tomo'][f'Iphi-{data_sub_key}'] = tms
+    dt.proc_data['overall']['tomo'][f'mfa-{data_sub_key}'] = mm    
+    dt.save_data(save_sns='overall', save_data_keys=['tomo'], 
+                 save_sub_keys=[f'Iphi-{data_sub_key}', f'mfa-{data_sub_key}'])
+    dt.set_h5_attr(f"overall/maps/Iphi-{data_sub_key}", "phi", phi0)
+    dt.set_h5_attr(f"overall/tomo/Iphi-{data_sub_key}", "phi", phi0)
 
 
 def segment_EBWP(tms, n_blur=13, n_blur_pith=25, th_bark=130,

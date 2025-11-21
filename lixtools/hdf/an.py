@@ -11,7 +11,7 @@ from py4xs.utils import get_bin_ranges_from_grid,calc_avg
 
 save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err"]},
                "MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], "unique": ["d", "err"]},
-               "ndarray": {"shared": [], "unique": []}
+               "ndarray": {"shared": [], "unique": []},
               }
 
 def regularize(ar, prec):
@@ -1060,6 +1060,8 @@ class h5xs_an(h5xs):
             d0 = data_proto
             
         dtype = d0.__class__.__name__
+        if dtype=="Array":
+            dtype = "ndarray"
         if not dtype in save_fields.keys():
             print(sn,data_key,sub_key)
             raise Exception(f"{dtype} is not supported for packing.")

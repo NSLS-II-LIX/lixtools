@@ -8,7 +8,7 @@ from scipy.signal import medfilt2d
 
 from skimage.transform import radon
 from skimage.filters import threshold_otsu
-import cv2
+import cv2,h5py
 
 from fabio.TiffIO import TiffIO
 

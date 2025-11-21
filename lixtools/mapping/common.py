@@ -399,8 +399,11 @@ def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):
         if trans_cor:
             idx = (trans_data>0)
             Iq[idx,:] = (Iq[idx,:].T/trans_data[idx]).T  
+
+        with ProgressBar():
+            ret = Iq.compute()
                 
-    return Iq
+    return ret
 
 def get_q_data_dask(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", save_to_overall=True,
                dezinger=None, trans_cor=True, ref_trans=5000, debug=True):
@@ -423,10 +426,12 @@ def get_q_data_dask(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", save_to_over
             data = da.concatenate([Iqs[_][:,idx] for _ in sorted(dt.samples)])
         else:
             data = Iqs[sn][:,idx]
-        print("saving data for ", sn)
-        with ProgressBar():
-            data.to_hdf5(dt.fn, f"{sn}/{nm}/merged")
-        dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
+        #print("saving data for ", sn)
+        #with ProgressBar():
+        #    data.to_hdf5(dt.fn, f"{sn}/{nm}/merged")
+        #dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")        
+        dt.add_proc_data(sn, nm, 'merged', data)
+        dt.save_data(sn, nm, 'merged')
         dt.set_h5_attr(f"{sn}/{nm}/merged", "qgrid", qgrid[idx]) 
 
 def sub_bkg_q_dask(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, save_to_overall=True):
@@ -491,12 +496,16 @@ def bin_phi_data_dask(fn,sn,q_range,dezinger,trans_cor,ref_trans):
         if trans_cor:
             idx = (trans_data>0)
             Iphi[idx,:] = (Iphi[idx,:].T/trans_data[idx]).T  
-                
-    return Iphi
 
-def get_phi_data_dask(dt, q_range=[0.01, 2.5], 
-                 sub_key="merged", ext="", bkg_thresh=0.6e-2, save_to_overall=True,
-                 dezinger=True, trans_cor=True, ref_trans=5000, debug=False):
+        # the compute needs to be done before the h5 file is closed
+        with ProgressBar():
+            ret = np.array(Iphi.compute())
+                
+    return ret
+
+def get_phi_data_dask(dt, q_range, sub_key, 
+                      ext="", bkg_thresh=0.6e-2, save_to_overall=True,
+                      dezinger=True, trans_cor=True, ref_trans=5000, debug=False):
     """ 
     """
     Iphis = {sn:bin_phi_data_dask(dt.fn, sn, q_range, dezinger, trans_cor, ref_trans) for sn in dt.samples}
@@ -511,11 +520,14 @@ def get_phi_data_dask(dt, q_range=[0.01, 2.5],
             data = da.concatenate([Iphis[_] for _ in sorted(dt.samples)])
         else:
             data = Iphis[sn]
-        print("saving data for ", sn)
-        with ProgressBar():
-            data.to_hdf5(dt.fn, f"{sn}/{nm}/{sub_key}")
-        dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
+        print("saving data for ", sn, nm, sub_key)
+        #with ProgressBar():
+        #    data.to_hdf5(dt.fn, f"{sn}/{nm}/{sub_key}")
+        #dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")
+        dt.add_proc_data(sn, nm, sub_key, data)
+        dt.save_data(sn, nm, sub_key)
         dt.set_h5_attr(f"{sn}/{nm}/{sub_key}", "q_range", q_range) 
+        dt.set_h5_attr(f"{sn}/{nm}/{sub_key}", "phigrid", dt.phigrid) 
 
     
 def get_phi_data(dt, q_range=[0.01, 2.5], bkg_q_range=None,
