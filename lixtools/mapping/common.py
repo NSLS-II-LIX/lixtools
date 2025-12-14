@@ -14,8 +14,6 @@ import scipy,cv2
 from scipy.signal import butter,filtfilt,find_peaks
 from scipy import ndimage
 
-from sklearn.utils.extmath import randomized_svd
-from sklearn.decomposition import NMF,MiniBatchNMF
 from sklearn.impute import KNNImputer
 from sklearn.cluster import KMeans
 
@@ -245,7 +243,6 @@ def bin_q_data(args):
         
     return [sn,q,mm]
 
-
 def bin_phi_data(args):    
     """
     proc_data is dt.proc_data[sn]['qphi']['merged']
@@ -285,7 +282,6 @@ def bin_phi_data(args):
         print(f"processing completed: {sn}                   \r", end="")    
         
     return [sn,phi,mm]
-
 
 def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", phi_range=None, save_to_overall=True,
                dezinger='1d', trans_cor=True, debug=True):
@@ -604,49 +600,7 @@ def sub_bkg_phi(dt, bkg_x_range=[70, 110], ext="", bkg_thresh=None, mask=None, s
         dt.proc_data[sn][f"Iphi{ext}"]['subtracted'] = np.vstack(mm)
         dt.save_data(save_sns=[sn], save_data_keys=f"Iphi{ext}", save_sub_keys="subtracted")
         dt.set_h5_attr(f"{sn}/Iphi{ext}/subtracted", "phigrid", xcor) 
-        dt.set_h5_attr(f"{sn}/Iphi{ext}/merged", "bkg", bkg) 
-        
-
-def estimate_Nc(x, mm, Ni=20, offset=0.1, cutoff=0.01):
-    """ use SVD to estimate the number of eigen vectors needed to describe the dataset
-        cutoff specifies the relative value of the lowest eigen value to be included (default 1% of the first)
-    """
-    V,S,U = randomized_svd(mm.T, Ni)
-    print("SVD diagonal elements: ", S)
-    eig_vectors = V*S
-    coefs = U
-
-    N = len(S[S>=cutoff*S[0]])
-    
-    fig, axs = plt.subplots(1,2,figsize=(9,5), gridspec_kw={'width_ratios': [2, 1]})
-    for i in range(N):
-        axs[0].plot(x, eig_vectors[:,i]-i*offset)
-    axs[1].semilogy(S, "ko")
-    axs[1].semilogy(N-1, S[N-1], "r.")
-    
-    return eig_vectors[:N]
-
-
-def get_evs(x, mms, N=5, max_iter=5000, offset=0.1, use_minibatch=False, **kwargs):
-    """ multiple samples/datasets
-        dts and mms should have the same length, mms is contains the background-subtracted data
-    """
-    if use_minibatch:
-        model = MiniBatchNMF(n_components=N, max_iter=max_iter, **kwargs)
-    else:
-        model = NMF(n_components=N, max_iter=max_iter, **kwargs)
-    W = model.fit_transform(np.vstack(mms).T)
-    eig_vectors = W
-    coefs = model.components_
-    N = model.n_components_
-    print(f"NMF stopped after {model.n_iter_} iterations, err = {model.reconstruction_err_}")
-
-    plt.figure(figsize=(6,5))
-    for i in range(eig_vectors.shape[1]):
-        plt.plot(x, eig_vectors[:,i]-i*offset)    
-    
-    return eig_vectors,coefs,model
-
+        dt.set_h5_attr(f"{sn}/Iphi{ext}/merged", "bkg", bkg)         
 
 def make_map_from_overall_attr(dt, attr, sname="overall", 
                                template_grp="int_saxs", map_name=None, correct_for_transsmission=False):
@@ -699,45 +653,6 @@ def make_map_from_overall_attr(dt, attr, sname="overall",
     else:
         return mm
     
-def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, template_grp="int_saxs"):    
-    sl = 0
-    N = eig_vectors.shape[-1]
-    maps = [f'ev{i}_{name}' for i in range(N)]
-    if res is not None:
-        maps += [f'res_{name}']
-    
-    for i in range(len(dts)):
-        dt = dts[i]        
-        dt.load_data(read_data_keys=["attrs"], quiet=True)
-        
-        """
-        for sn in dt.samples:
-            ll = len(dt.proc_data[sn]['attrs'][template_grp])   #'transmission'
-            for j in range(N):
-                dt.proc_data[sn]['attrs'][f'ev{j}_{name}'] = coefs[j,sl:sl+ll]
-            dt.proc_data[sn]['attrs'][f'res_{name}'] = res[sl:sl+ll]
-            sl += ll
-
-        dt.make_map_from_attr(attr_names=[f'ev{i}_{name}' for i in range(N)], correct_for_transsmission=abs_cor)
-        dt.make_map_from_attr(attr_names=[f'res_{name}'], correct_for_transsmission=abs_cor)
-        """
-        
-        ll = dt.proc_data['overall']['maps'][template_grp].d.size
-        for j in range(N):
-            make_map_from_overall_attr(dt, coefs[j,sl:sl+ll], template_grp=template_grp, 
-                                       map_name=f'ev{j}_{name}', correct_for_transsmission=abs_cor)
-        if res is not None:
-            make_map_from_overall_attr(dt, res[sl:sl+ll], template_grp=template_grp, 
-                                       map_name=f'res_{name}', correct_for_transsmission=abs_cor)
-        sl += ll
-        
-        if not 'attrs' in dt.proc_data['overall'].keys():
-            dt.proc_data['overall']['attrs'] = {}
-        dt.proc_data['overall']['attrs'][f'evs_{name}'] = eig_vectors
-        dt.proc_data['overall']['attrs'][f'ev_{name}'] = x
-        dt.save_data(save_sns='overall', save_data_keys=['attrs'], save_sub_keys=[f'evs_{name}', f'ev_{name}'], quiet=True)
-        dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=maps, quiet=True)
-        
 def make_maps_from_Iq(dts, save_overall=True, int_data="subtracted",
                       q_list={"int_cellulose": [1.05, 1.15], "int_amorphous": [1.25, 1.35], "int_saxs": [0.05, 0.2]},
                       template_grp="transmission", abs_cor=False, quiet=True): 
@@ -765,8 +680,7 @@ def make_maps_from_Iq(dts, save_overall=True, int_data="subtracted",
                                            map_name=k, correct_for_transsmission=abs_cor)
             dt.save_data(save_data_keys="maps", save_sub_keys=sks, quiet=True)
         else:
-            dt.make_map_from_attr(save_overall=False, attr_names=sks, correct_for_transsmission=False)
-                    
+            dt.make_map_from_attr(save_overall=False, attr_names=sks, correct_for_transsmission=False)                    
             
 def scale_transmitted_maps(dt, sc=170000, quiet=True):
     if 'transmitted' not in dt.proc_data['overall']['maps'].keys():
@@ -778,37 +692,6 @@ def scale_transmitted_maps(dt, sc=170000, quiet=True):
         dt.proc_data['overall']['maps']['transmitted'].d /= sc
         dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=['transmitted'], quiet=quiet)
             
-def check_ev_tomos(dt, ev_tag, ref_tomo='absorption', quiet=True):
-    """ scale the magnitude based on the values from the sinogram
-        shift the tomo based on the ref_tomo
-        these are necessary when the tomograms are reconstructed using different algorithms
-    """
-    grp = dt.proc_data['overall']
-    tm0 = grp['tomo'][ref_tomo].d
-    keys = [k for k in grp['tomo'].keys() if k[:2]=='ev' and ev_tag in k]
-    
-    for k in keys:
-        tm1 = grp['tomo'][k].d*np.nansum(grp['maps'][k].d)/np.nansum(grp['tomo'][k].d)
-        tm1[np.isnan(tm1)] = 0
-        
-        shift = pcc(tm0, tm1)[0]
-        grp['tomo'][k].d = scipy.ndimage.shift(tm1, shift)
-        
-    dt.save_data(save_sns='overall', save_data_keys=['tomo'], save_sub_keys=keys, quiet=quiet)
-    
-def recombine(coef, method="nmf"):
-    """ coef should have the same dimension as dt.proc_data['overall']['attrs'][f'evs_{method}'].shape[1]
-    """
-    N = dt.proc_data['overall']['attrs'][f'evs_{method}'].shape[1]
-    if len(coef)!=N:
-        raise Exception(f"shape mismatch: {len(coef)} != {N}")
-        
-    return np.sum(coef*dt.proc_data['overall']['attrs'][f'evs_{method}'], axis=1)
-
-
-def get_roi(d, qphirange):
-    return np.nanmean(d.apply_symmetry().roi(*qphirange).d)
-    
 import xraydb,json
 from scipy.optimize import nnls
 
@@ -1100,8 +983,9 @@ def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), **kwargs):
     for i in range(nfr):
         fig,ax = plt.subplots(figsize=figsize)
         mms[i].plot(ax=ax, **kwargs)
-        plt.subplots_adjust(top=0.85, right=0.85)
+        #plt.subplots_adjust(top=0.85, right=0.85)
         ax.set_title(labels[i], y=1.1)
+        plt.tight_layout()
         #plt.show()
         
         # this may be slower
