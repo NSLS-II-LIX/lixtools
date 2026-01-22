@@ -196,6 +196,11 @@ def create_XRF_link(dfn, fn):
         sn = list(dfh5.keys())[0]
         gn = find_field(dfh5, "xsp3_image", sn)
         fh5["/xrfmap/detsum/counts"] = h5py.ExternalLink(dfn, f"{sn}/{gn}/data/xsp3_image")
+        # pyXRF reads the incident X-rya enengy, in keV
+        hdr = json.loads(dfh5[sn].attrs['start'])
+        grp = fh5.create_group("/xrfmap/scan_metadata")
+        grp.attrs['instrument_mono_incident_energy'] = 1e-3*hdr['energy']['energy']
+        grp.attrs['scan_id'] = hdr['scan_id']
 
 def bin_q_data(args):    
     """
