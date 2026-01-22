@@ -23,7 +23,38 @@ def calc_CI(dt: type(h5xs_scan), sn='overall', data_key="tomo",
     dt.proc_data[sn][data_key]['CI'] = mm
     dt.save_data(save_sns=[sn], save_data_keys=[data_key], save_sub_keys=['CI'])
 
+def calc_CI2(dt: type(h5xs_scan), sn='overall', data_key="tomo", 
+            cell_key='int_cell_Iq', amor_key='int_amor_Iq',
+            sc=1., amor_cutoff=0.02, show_mask=False)-> None:
+    """ sc is needed to account for the intensity difference between cellulose and amorphous 
+        components due to the way they are calculated: span of q-range, shaping factor
+    """
+    mm = dt.proc_data[sn][data_key][cell_key].copy()
+    dc = dt.proc_data[sn][data_key][cell_key].d
+    da = dt.proc_data[sn][data_key][amor_key].d
 
+    amo1 = np.array(da/np.max(da)*256, dtype=np.uint8)
+    amo2 = cv2.adaptiveThreshold(amo1, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 4)
+    amo2[da<amor_cutoff] = 0
+    idx = (amo2>0)
+    
+    if show_mask:
+        plt.figure(figsize=(10,3))
+        plt.subplot(131)
+        plt.hist(amo.flatten(), bins=100, alpha=0.3)
+        plt.yscale('symlog')
+        plt.subplot(132)
+        plt.imshow(amo1, cmap="binary")
+        plt.subplot(133)
+        plt.imshow(amo2, cmap="binary")
+
+    da *= sc
+    mm.d[idx] = (dc-da)[idx]/dc[idx]
+    mm.d[~idx] = 0
+    mm.d[np.isinf(mm.d)] = 0
+    dt.proc_data[sn][data_key]['CI'] = mm
+    dt.save_data(save_sns=[sn], save_data_keys=[data_key], save_sub_keys=['CI'])
+    
 # see Rüggeberg et al. J Struct Biol 2013, though there appear to be errors in the equations (Appendix)
 # but the final expressions for the phi positions are correct (from Entwistle et al. 2007)
 # nu is the MFA
