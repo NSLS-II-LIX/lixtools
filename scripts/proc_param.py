@@ -45,11 +45,11 @@ attr_dict = {}
 
 # 2c. XRF maps
 ele_list = ['K_K', 'Ca_K', 'Mn_K', 'Fe_K', 'Cu_K', 'Zn_K']
-pyXRF_fitting_parameters = None
+pyxrf_param_fn = None
 ref_incident = 1000
 # energy range, x10 eV
 eNstart=310
-eNend=1100
+eNend=1800
 
 # 3. tomographic reconstruction
 algorithm = "mlem"   # "sirt"
