@@ -1014,3 +1014,44 @@ def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), **kwargs):
         vidwriter.write(frame)
     cv2.destroyAllWindows()
     vidwriter.release()    
+
+def make_video_from_h5(fn, det_name="camES2", fps=3, figsize=(4,4), **kwargs):
+    """ fn is the a h5 file packed from experimental data
+        assume the data is under f"primary/data/{det_name}_image"
+        kwargs are passed onto MatrixWithCorrds.plot()
+    """
+    current_backend = plt.get_backend()
+    plt.close('all')
+    plt.switch_backend('agg')
+    
+    with h5py.File(fn, "r") as fh:
+        sn = list(fh.keys())[0]
+        images = fh[f'{sn}/primary/data/{det_name}_image'][...]
+    nfr = len(images)
+    
+    vidwriter = None    
+    frames = []
+    for i in range(nfr):
+        fig = plt.figure()
+        plt.imshow(images[i])
+        plt.axis('off')
+        plt.tight_layout()
+        
+        # this may be slower
+        buf = io.BytesIO()
+        fig.savefig(buf, dpi=100)
+        buf.seek(0)
+        img = PIL.Image.open(buf)
+        
+        frames.append(img.copy())
+        plt.close()
+
+    plt.switch_backend(current_backend)
+
+    height,width,layers = np.array(frames[0]).shape
+    vidwriter = cv2.VideoWriter(fn.replace(".h5",".mp4"), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width,height)) 
+    for img in frames:
+        frame = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+        vidwriter.write(frame)
+    cv2.destroyAllWindows()
+    vidwriter.release()    

@@ -151,13 +151,14 @@ class ComponentSeparator:
     def get_evs(self, N, max_iter=5000, offset=0.1, use_minibatch=False, **kwargs):
         """ eig_vectors,coefs,model are returned
         """
+        self.data1d[self.data1d<0] = 0
         self.evs,self.coefs,self.model = get_evs(self.qgrid[self.qmask], self.data1d, N=N, max_iter=max_iter, 
                                                  offset=offset, use_minibatch=use_minibatch, **kwargs)
         self.res = np.fabs(np.dot(self.evs, self.coefs).T-self.data1d)
 
     def show_overall_residue(self, thresh=1e-3):
         plt.figure()
-        dd = np.sum(self.data1d, axis=1)
+        pp = np.sum(self.data1d, axis=1)
         rr = np.sqrt(np.sum(self.res**2, axis=1))
         idx = (dd>thresh)
         pp[idx] /= rr[idx]
@@ -175,8 +176,9 @@ class ComponentSeparator:
         """ add a label to distinguish between different eigenvectors
         """
         self.dts[0].load_data("overall", ["maps"])
-        tgrp = self.dts[0].proc_data['overall']['maps'].keys()[0]
-        make_ev_maps(self.dts, self.qgrid[self.qmask], self.evs, self.coefs, res=self.res, 
+        tgrp = list(self.dts[0].proc_data['overall']['maps'].keys())[0]
+        res = np.sqrt(np.average(self.res*self.res, axis=-1))
+        make_ev_maps(self.dts, self.qgrid[self.qmask], self.evs, self.coefs, res=res, 
                      name=label, abs_cor=False, template_grp=tgrp)
         
     def clustering_analysis(self):

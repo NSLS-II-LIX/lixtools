@@ -230,6 +230,7 @@ def stack_2d_slices(fns, fn3d, coords=[], replace_path={},
     """
 
     from lixtools.hdf import h5xs_scan
+    from py4xs.data2d import MatrixWithCoords
 
     dts = []
     for fn in fns:
