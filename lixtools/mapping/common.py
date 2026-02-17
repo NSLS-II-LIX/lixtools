@@ -1073,6 +1073,16 @@ def make_video_multimap(sn, datakey, map_list=None, fr_labels=None,
     plt.switch_backend('agg')
     vidwriter = None    
     frames = []
+
+    if 'cmap' in kwargs.keys():
+        cmap = kwargs['cmap']
+    else: 
+        cmap='RdBu_r'
+
+    if 'norm' in kwargs.keys():
+        norm = kwargs['norm']
+    else: 
+        norm="linear"
     
     for fr in range(nfr):
         print(f"processing frame #{fr} ...      \r", end="")
@@ -1085,10 +1095,10 @@ def make_video_multimap(sn, datakey, map_list=None, fr_labels=None,
                 if n<len(map_list):
                     k = map_list[n]
                     if datakey=="maps":
-                        axs[i][j].imshow(dm[k][:,fr,:], aspect=asp, clim=[0, max_dict[k]], cmap='RdBu_r', norm="linear")
+                        axs[i][j].imshow(dm[k][:,fr,:], aspect=asp, clim=[0, max_dict[k]], cmap=cmap, norm=norm)
                         axs[i][j].text(1.5, -1.5, k)
                     else:
-                        axs[i][j].imshow(dm[k][fr,:,:], aspect=asp, clim=[0, max_dict[k]], cmap='RdBu_r', norm="linear")
+                        axs[i][j].imshow(dm[k][fr,:,:], aspect=asp, clim=[0, max_dict[k]], cmap=cmap, norm=norm)
                         axs[i][j].text(1.5, -5, k)
                 
                 axs[i][j].set_axis_off()
@@ -1113,7 +1123,7 @@ def make_video_multimap(sn, datakey, map_list=None, fr_labels=None,
         vidwriter.write(frame)
     cv2.destroyAllWindows()
     vidwriter.release()        
-            
+                
 
 def make_video_from_h5(fn, det_name="camES2", fps=3, figsize=(4,4), **kwargs):
     """ fn is the a h5 file packed from experimental data
