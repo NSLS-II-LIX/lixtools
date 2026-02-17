@@ -1,8 +1,8 @@
 #!/nsls2/software/mx/lix/conda_envs/an_2024Aug/bin/python
 
 import sys,os
-#shared_dir = '/nsls2/software/mx/lix/pylibs'
-shared_dir = '/nsls2/users/lyang/pro/pylibs'
+shared_dir = '/nsls2/software/mx/lix/pylibs'
+#shared_dir = '/nsls2/users/lyang/pro/pylibs'
 sys.path = [os.getcwd(), shared_dir]+sys.path
 
 import numpy as np
