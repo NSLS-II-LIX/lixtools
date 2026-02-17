@@ -239,14 +239,14 @@ def stack_2d_slices(fns, fn3d, coords=[], replace_path={},
         dts.append(dt)
 
     dt1 = h5xs_scan(fn3d, [dt.detectors, dt.qgrid])
-    
-    for k in dts[0].proc_data['overall']['maps'].keys(): 
+
+    # it is possible that not all datasets share the same subkeys
+    # sum(list_of_lists, []) will flatten the list
+    keys = list(np.unique(sum([list(dt.proc_data['overall']['maps'].keys()) for dt in dts], [])))
+    for k in keys: 
         if k in ['transmission', 'transmitted', 'incident']:
             continue
             
-        #if 'xrf' in k:
-        #    kk = k+"_avg"
-        #    dd = [dt.proc_data['overall']['maps'][k][0].average(dt.proc_data['overall']['maps'][k][1:4]) for dt in dts]
         if isinstance(dts[0].proc_data['overall']['maps'][k], list):
             print(f"sinogram for {k} is a list, don't know what to do ...")
         else:
