@@ -1125,7 +1125,8 @@ def make_video_multimap(sn, datakey, map_list=None, fr_labels=None,
     vidwriter.release()        
                 
 
-def make_video_from_h5(fn, det_name="camES2", fps=3, figsize=(4,4), **kwargs):
+def make_video_from_h5(fn, det_name="camES2", fps=3, figsize=(4,4), 
+                       x1=0, x2=-1, y1=0, y2=-1, **kwargs):
     """ fn is the a h5 file packed from experimental data
         assume the data is under f"primary/data/{det_name}_image"
         kwargs are passed onto MatrixWithCorrds.plot()
