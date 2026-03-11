@@ -9,6 +9,9 @@ from py4xs.slnxs import Data1d
 from py4xs.hdf import lsh5,h5xs,proc_merge1d,h5_file_access
 from py4xs.utils import get_bin_ranges_from_grid,calc_avg
 
+import dask.array as da
+from dask.diagnostics import ProgressBar
+
 save_fields = {"Data1d": {"shared": ['qgrid'], "unique": ["data", "err"]},
                "MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], "unique": ["d", "err"]},
                "ndarray": {"shared": [], "unique": []},
@@ -440,19 +443,27 @@ class h5xs_an(h5xs):
     @h5_file_access
     def has_data(self, data_key, sub_key=None):
         """ this will check the file instead of proc_data in memory
+            Assume that if 'overall' exists, the processed data should be under it
+            Otherwise, there is a single sample and the processed data is under that
         """
+        samples = list(self.fh5.keys())
         if len(self.samples)==0:
             return False
+        if 'overall' in samples:
+            sn = 'overall'
+        elif len(self.samples)>1:
+            raise Exception("Expect only one sample_name in analysis results without an overall group: ", self.samples)
+        else:
+            sn = self.samples[0]
         
-        for sn in self.samples:
-            if not data_key in self.fh5[sn].keys():
+        if not data_key in self.fh5[sn].keys():
+            return False
+        if sub_key:
+            if not sub_key in self.fh5[sn][data_key].keys():
                 return False
-            if sub_key:
-                if not sub_key in self.fh5[sn][data_key].keys():
-                    return False
-
-        return True
     
+        return True
+   
     def add_proc_data(self, sn, data_key, sub_key, data):
         if sn not in self.proc_data.keys():
             self.proc_data[sn] = {}
@@ -642,6 +653,92 @@ class h5xs_an(h5xs):
             self.pack(sn, 'qxy', map_key, arr_data={'d': arr_ds}, data_proto=dd2)
         self.enable_write(False)
         
+    @h5_file_access
+    def process_qxy_SAXS(self, qmax, debug=True):
+        """ produce qx-qy maps corresponding to each exposure, for SAXS only, apply central symmetry
+            retain the pixel resolution from the raw data, to get around the issue over-sampling by 2D histogramming
+        """
+        det_ext = "_SAXS"
+        det = self.detectors[0]
+        map_key = det_ext
+
+        exp = det.exp_para
+        cx = int(exp.bm_ctr_x+0.5)
+        cy = int(exp.bm_ctr_y+0.5)
+        dr = exp.ratioDw*exp.ImageWidth   # detector distance in pixels 
+        dq = 4.*np.pi/exp.wavelength*np.sin(0.5/dr)           
+        dN = int(qmax/dq+0.5)
+        qgrid = np.arange(-dN, dN+0.1)*dq
+        mask0 = exp.mask.map[cy-dN:cy+dN+1, cx-dN:cx+dN+1]
+        mask1 = np.rot90(mask0, 2)
+        qx = np.tile(qgrid, [len(qgrid),1])
+        qy = np.tile(qgrid, [len(qgrid),1]).T
+        q = np.sqrt(qx*qx+qy*qy)
+                
+        results = {}
+        for sn in self.h5xs.keys():
+            if debug:
+                print(f"processing {sn} ...")
+            dh5 = self.h5xs[sn]
+            with h5py.File(dh5.fn, "r") as fh:
+                imgs = da.array(fh[sn]["pil/data/pil1M_image"])
+            
+                if exp.flip>0:
+                    imgs1 = da.rot90(imgs, exp.flip, [-2, -1])
+                elif exp.flip<0:
+                    imgs1 = da.rot90(da.fliplr(imgs, -1), -exp.flip, [-2, -1])
+                else:
+                    imgs1 = imgs
+                imgs1 = imgs1[:, cy-dN:cy+dN+1, cx-dN:cx+dN+1]
+                imgs2 = da.rot90(imgs1, 2, [-2, -1])
+            
+                with ProgressBar():
+                    ret1 = imgs1.compute()
+                    ret2 = imgs2.compute()
+    
+            ret1[:, mask0] = 0
+            ret2[:, mask1] = ret1[:, mask1]
+            ret2[:, ~mask1] += ret1[:, ~mask1] 
+            mm = np.ones_like(mask0, dtype=float)
+            mm[~(mask0|mask1)] = 0.5
+            results[sn] = ret2*mm                
+        
+        """ this didn't work for some reason
+        dd2 = MatrixWithCoords()
+        dd2.xc = qgrid
+        dd2.xc_label = "qx"
+        dd2.yc = qgrid
+        dd2.yc_label = "qy"
+        dd2.err = None
+        
+        self.enable_write(True)
+        for sn,arr_data in results.items():  
+            if debug:
+                print("writing data: ", sn, arr_data.shape)
+            self.pack(sn, 'qxy', map_key, arr_data={'d': arr_data}, data_proto=dd2)
+        self.enable_write(False)
+        """
+        for sn,arr_data in results.items():  
+            maps = []
+            Iq = []
+            for i in range(arr_data.shape[0]):
+                dd2 = MatrixWithCoords()
+                dd2.xc = qgrid
+                dd2.xc_label = "qx"
+                dd2.yc = qgrid
+                dd2.yc_label = "qy"
+                dd2.err = None
+                dd2.d = arr_data[i]
+                maps.append(dd2)
+
+                hh,bb = np.histogram(q, bins=len(qgrid), range=[0, qmax], weights=dd2.d)
+                Iq.append(hh)
+                
+            self.add_proc_data(sn, 'qxy', map_key, maps)
+            self.add_proc_data(sn, 'Iq', map_key, np.vstack(Iq))
+            self.save_data([sn], ['qxy', 'Iq'])
+            self.set_h5_attr(f"{sn}/Iq/{map_key}", "qgrid", (bb[1:]+bb[:-1])/2)
+            
     @h5_file_access
     def process1d0(self, N=8, max_c_size=1024, debug=True):
         qgrid = self.qgrid 

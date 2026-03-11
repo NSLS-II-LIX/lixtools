@@ -7,6 +7,7 @@ ylist = np.arange(22.35, 22.55, 0.01)
 sample_list = [f"{sn}_y{y0:.3f}" for y0 in ylist]
 
 # processing steps
+make_qxy_maps = False
 make_qphi_maps = False
 extract_q_profiles = False            
 extract_phi_profiles = True         
@@ -20,8 +21,9 @@ proc_ext = ""
 rawdata_file_pattern = "-??"
 replace_path = {"legacy": "proposals"}
 
-# 0. 2D q-phi intensity maps 
+# 0. 2D intensity maps 
 save_overall = True          # assemble from multiple scans 
+qxy_qmax = 0.02              # applicable for qxy maps, at the moment for SAXS only 
 look_for_qphi_maps = True    # use live-processed data
 
 # 1a. line profiles, in q and phi

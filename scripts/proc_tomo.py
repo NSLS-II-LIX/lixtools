@@ -1,8 +1,8 @@
 #!/nsls2/software/mx/lix/conda_envs/an_2024Aug/bin/python
 
 import sys,os
-shared_dir = '/nsls2/software/mx/lix/pylibs'
-#shared_dir = '/nsls2/users/lyang/pro/pylibs'
+#shared_dir = '/nsls2/software/mx/lix/pylibs'
+shared_dir = '/nsls2/users/lyang/pro/pylibs'
 sys.path = [os.getcwd(), shared_dir]+sys.path
 
 import numpy as np
@@ -80,8 +80,11 @@ for sample in pp.sample_list:
         else:
             dt.load_data(read_data_keys=['attrs'])
 
-    if not dt.has_data("qphi"):
-        pp.make_qphi_maps = True
+    #if not dt.has_data("qphi"):
+    #    pp.make_qphi_maps = True
+    if hasattr(pp, 'make_qxy_maps'):
+        if pp.make_qxy_maps:
+            dt.process_qxy_SAXS(pp.qxy_qmax)
     
     if pp.make_qphi_maps:
         print(f"0a. create q-phi maps ...")
@@ -127,7 +130,7 @@ for sample in pp.sample_list:
         dt.load_data(read_data_keys=['attrs'])
         dt.make_map_from_attr(attr_names=["transmitted", "absorption", "incident"], 
                               correct_for_transsmission=False, save_overall=pp.save_overall)
-        fix_absorption_map(dt)
+        fix_absorption_map(dt, sname=sn)
 
         print(f"2b. create scattering maps ...")
         okeys = []
@@ -151,12 +154,14 @@ for sample in pp.sample_list:
             
         if not pp.extract_q_profiles:
             dt.load_data(read_data_keys=['Iq'])
-            if "subtracted" in dt.proc_data[sn]['Iq'].keys():
+        if dt.has_data('Iq'):
+            klist = list(dt.proc_data[sn]['Iq'].keys())
+            if "subtracted" in klist:
                 d1dk = "subtracted"
             else:
-                d1dk = "merged"
-        make_maps_from_Iq([dt], int_data=d1dk, q_list=pp.q_map_dict, abs_cor=False, save_overall=pp.save_overall)
-        maps_present = True
+                d1dk = list(set(klist) - set(['averaged', 'subtracted']))[0]
+            make_maps_from_Iq([dt], int_data=d1dk, q_list=pp.q_map_dict, abs_cor=False, save_overall=pp.save_overall)
+            maps_present = True
 
     if pp.construct_XRF_maps:
         print(f"2c. create XRF maps ...")
@@ -164,8 +169,8 @@ for sample in pp.sample_list:
         maps_present = True
 
     if pp.tomo_reconstruction:
-        if not maps_present:
-            dt.load_data("overall", ['maps'])
+        #if not maps_present:
+        dt.load_data("overall", ['maps'])
         print(dt.proc_data['overall']['maps'].keys())
         if pp.rot_cen is None:
             try:
