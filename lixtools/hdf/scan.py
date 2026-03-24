@@ -8,7 +8,7 @@ import multiprocessing as mp
 import json,os,copy,tempfile,re
 from scipy.signal import find_peaks
 
-from .an import h5xs_an
+from .an import h5xs_an,get_scan_parms
 from lixtools.tomo.common import calc_tomo
 
 class h5xs_scan(h5xs_an):
@@ -22,6 +22,8 @@ class h5xs_scan(h5xs_an):
 
         for sn in self.samples:
             self.attrs[sn]['scan'] = json.loads(self.get_h5_attr(sn, 'scan'))
+
+        self.sid = None
             
     def import_raw_data(self, fn_raw, sn=None, force_uniform_steps=True, prec=0.001, exp=1,
                         force_synch='auto', force_synch_trig={'em1': 'auto', 'em2': 'auto'}, **kwargs):
@@ -43,37 +45,6 @@ class h5xs_scan(h5xs_an):
                 self.get_mon(sn=sn, trigger=fast_axis, exp=exp, 
                              force_synch=force_synch, force_synch_trig=force_synch_trig)    
                 
-    def get_index_from_map_coords(self, sn, xc, yc, map_name=None, map_data_key='maps'):
-        """ sn of "overall" should be dealt with separately
-        """
-        if sn=="overall":
-            raise Exception("not yet implemented for overall")
-        elif not sn in self.samples:
-            raise Exception(f"invalid sample name: {sn}")
-        if map_name is None: # all maps under the map_data_key should share the same coordinates
-            map_name = list(self.proc_data[sn][map_data_key].keys())[0]
-            
-        mm = self.proc_data[sn][map_data_key][map_name]
-        im = mm.copy()
-        im.d = np.arange(len(mm.xc)*len(mm.yc)).reshape(mm.d.shape)    
-        if self.attrs[sn]['scan']['snaking']:
-            for i in range(1,self.attrs[sn]['scan']['shape'][0],2):
-                im.d[i] = np.flip(im.d[i])
-        
-        xb = (im.xc[1:]+im.xc[:-1])/2
-        yb = (im.yc[1:]+im.yc[:-1])/2
-        if xc>xb[-1]:
-            ix = -1
-        else:
-            ix = np.where(xb>=xc)[0][0]
-        if yc>yb[-1]:
-            iy = -1
-        else:
-            iy = np.where(yb>=yc)[0][0]
-        
-        return im.d[iy,ix]
-        
-                
     def get_attr_from_map(self, sn, map_name, map_data_key='maps', quiet=True):
         """ it is sometimes necessary to translate a 2D map into a 1D array, so that the index of the array
             can match the index of the 2D scattering data
@@ -86,7 +57,7 @@ class h5xs_scan(h5xs_an):
                 m.d[i] = np.flip(m.d[i])
                 
         return m.flatten()
-                                 
+
     def make_map_from_overall_attr(self, attr, correct_for_transsmission=True):
         """ this is used to calculate maps from attrubutes that are assigned to "overall" by simple stacking, and 
             therefore need to be reorganized to recover the actual shape of the data
@@ -96,9 +67,9 @@ class h5xs_scan(h5xs_an):
         """
         sl = 0
         maps = []
-        for sn in dt.h5xs.keys():
+        for sn in self.h5xs.keys():
             if not 'scan' in self.attrs[sn].keys():
-                get_scan_parms(self.h5xs[sn], sn)
+                self.attrs[sn]['scan'] = get_scan_parms(self.h5xs[sn], sn)
 
             ll = np.prod(self.attrs[sn]['scan']['shape'])
             m = MatrixWithCoords()
@@ -124,9 +95,55 @@ class h5xs_scan(h5xs_an):
         #self.proc_data['overall']['maps'][an] = mm
         return mm
     
+    def get_index_from_map_coords(self, sn, xc, yc, map_name=None, map_data_key='maps'):
+        """ sn of "overall" should be dealt with separately
+            first compile a dictionary of correspondence between overall index and scan/sampple name and data point index
+            make use of make_map_from_overall_attr()                  
+        """
+        if not sn in self.samples+['overall']:
+            raise Exception(f"invalid sample name: {sn}")
+
+        if self.sid is None:
+            for i,ssn in enumerate(self.samples):
+                if not 'scan' in self.attrs[ssn].keys():
+                    self.attrs[ssn]['scan'] = get_scan_parms(self.h5xs[ssn], ssn)
+                self.add_proc_data(ssn, 'attrs', '_idx', 0.001*i+np.arange(np.prod(self.attrs[ssn]['scan']['shape'])))
+            self.sid = self.make_map_from_attr(attr_names='_idx', return_dict=True, correct_for_transsmission=False)
+                
+        im = self.sid[sn]
+        xb = (im.xc[1:]+im.xc[:-1])/2
+        yb = (im.yc[1:]+im.yc[:-1])/2
+        if xc>xb[-1]:
+            ix = -1
+        else:
+            ix = np.where(xb>=xc)[0][0]
+        if yc>yb[-1]:
+            iy = -1
+        else:
+            iy = np.where(yb>=yc)[0][0]
+
+        fidx = im.d[iy,ix]
+        nidx = int(fidx)
+        sidx = int((fidx-nidx)*1000+0.5)
+        return self.samples[sidx],nidx
+                
+    def find_sn_idx_from_overall(self, idx):
+        """ find the raw data source that correspond to the data point in overall attribute
+            simply stacked from individual scans
+        """
+        for sn in self.samples:
+            if not 'scan' in self.attrs[sn].keys():
+                self.attrs[sn]['scan'] = get_scan_parms(self.h5xs[sn], sn)
+            ll = np.prod(self.attrs[sn]['scan']['shape'])
+            if idx<ll:
+                return sn,idx
+            idx -= ll
+
+        raise Exception("already at the end of all data: ", idx)
+    
     def make_map_from_attr(self, save_overall=True, map_data_key='maps', attr_names="transmission", 
                            ref_int_map=None, ref_trans=-1, pk_prominence_cutoff = 500,
-                           correct_for_transsmission=True, recalc_trans_map=True,
+                           correct_for_transsmission=True, recalc_trans_map=True, return_dict=False,
                            debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as
             proc_data[sname]["attrs"][attr_name]
@@ -162,9 +179,10 @@ class h5xs_scan(h5xs_an):
             if an=="transmission" and not recalc_trans_map:
                 continue   # this should be calculated from absorption map
             
+            ret = {}
             for sn in self.h5xs.keys():
                 if not 'scan' in self.attrs[sn].keys():
-                    get_scan_parms(self.h5xs[sn], sn)
+                    self.attrs[sn]['scan'] = get_scan_parms(self.h5xs[sn], sn)
                 if an not in self.proc_data[sn]['attrs'].keys():
                     raise Exception(f"attribue {an} cannot be found for {sn}.")
                 
@@ -195,7 +213,10 @@ class h5xs_scan(h5xs_an):
                     maps.append(m)
                 if len(maps)==1:
                     maps = maps[0]
-                self.add_proc_data(sn, map_data_key, an, maps)
+                if return_dict:
+                    ret[sn] = maps
+                else:
+                    self.add_proc_data(sn, map_data_key, an, maps)
 
             # assume the scans are of the same type, therefore start from the same direction
             if save_overall:           
@@ -205,10 +226,19 @@ class h5xs_scan(h5xs_an):
                         maps = [self.proc_data[sn][map_data_key][an][i] for sn in self.h5xs.keys()]
                         mm.append(maps[0].merge(maps[1:]))
                 else:
-                    maps = [self.proc_data[sn][map_data_key][an] for sn in self.h5xs.keys()]
+                    if return_dict:
+                        maps = list(ret.values())
+                    else:
+                        maps = [self.proc_data[sn][map_data_key][an] for sn in self.h5xs.keys()]
                     mm = maps[0].merge(maps[1:])
-                self.add_proc_data('overall', map_data_key, an, mm)
-        
+                if return_dict:
+                    ret['overall'] = mm
+                else:
+                    self.add_proc_data('overall', map_data_key, an, mm)
+
+        if return_dict:
+            return ret
+                    
         if save_overall:
             sns = ['overall']
         else:
