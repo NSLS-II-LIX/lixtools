@@ -299,7 +299,7 @@ class h5xs_an(h5xs):
         self.h5xs = {}
         self.raw_data = {}
         
-        with h5py.File(fn) as self.fh5:            
+        with h5py.File(fn, swmr=True) as self.fh5:            
             if "pre_proc" in self.fh5.attrs:
                 pre_proc0 = self.fh5.attrs["pre_proc"]
                 if pre_proc0!=pre_proc:
