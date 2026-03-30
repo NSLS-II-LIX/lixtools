@@ -204,7 +204,6 @@ def create_XRF_link(dfn, fn):
 
 def bin_q_data(args):    
     """
-    
     proc_data is dt.proc_data[sn]['qphi']['merged']
     sc is the shaping factor
     q_range=[0.01, 2.5], phi_range=None, dezinger='1d'
@@ -290,7 +289,7 @@ def bin_phi_data(args):
 
 def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", phi_range=None, save_to_overall=True,
                dezinger='1d', trans_cor=True, debug=True):
-    """ 
+    """ calculate 1D I(q) intensity profiles form the merged q-phi intensity maps
     """        
     N = len(dt.samples)
     pool = mp.Pool(N)
@@ -330,7 +329,8 @@ def get_q_data(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", phi_range=None, s
         dt.set_h5_attr(f"{sn}/{nm}/merged", "qgrid", q) 
     
 def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, save_to_overall=True):
-    """ bkg_thresh
+    """ background subtraction for I(q) intensity profiles
+        assume the profiles with lowest intensity with bkg_x_range to be background scattering
     """
     if save_to_overall:
         sns = ['overall']
@@ -369,6 +369,58 @@ def sub_bkg_q(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, 
         dt.set_h5_attr(f"{sn}/Iq{ext}/subtracted", "qgrid", xcor) 
         dt.set_h5_attr(f"{sn}/Iq{ext}/merged", "bkg", bkg) 
         
+def sub_bkg_qphi(dt, bkg_x_range=[0.03, 0.08], ref_trans=5000, bkg_thresh=None):
+    """ apaply central symmtry to merged q-phi intensity maps
+        find the frames with lowest scattering intensity in bkg_x_range, assume them as background scattering
+        perform background subtraction based on transmitted beam intensity
+        for consistency between samples, normalized transmitted intensity value to ref_trans
+    """
+    sns = dt.samples
+    with h5py.File(dt.fn, "r+") as fh5:
+        xcor = fh5[f"{sns[0]}/qphi"].attrs['xc']
+        xidx = ((xcor>bkg_x_range[0]) & (xcor<bkg_x_range[1]))
+        ycor = fh5[f"{sns[0]}/qphi"].attrs['yc']
+        d0 = fh5[f"{sns[0]}/qphi/merged/d"][0,:,:]
+        Np = int(len(ycor)/2)
+        mask0 = np.isnan(d0)
+        mask1 = np.vstack([mask0[Np:,:], mask0[:Np,:]])
+        mask_r = (mask1 & ~mask0)    # fill in the gap
+        mask_d = (~mask1 & ~mask0)   # redundant
+        
+        for sn in sns:    
+            print(f"begin processing {sn} ...       \r", end="")
+            data = fh5[f"{sn}/qphi/merged/d"][...]
+            trans_data = fh5[f'{sn}/attrs/transmitted'][:data.shape[0]]/ref_trans   # issue with transmitted data being too long
+
+            # interpolate zero transmitted beam intensity
+            idx_z = (trans_data==0)
+            trans_data[idx_z]= np.interp(trans_data[idx_z], trans_data[~idx_z], trans_data[~idx_z])
+            
+            tt = np.hstack([data[:,Np:,:], data[:,:Np,:]])
+            tt[:,mask_r] = data[:,mask_r]            
+            tt[:,mask_d] = (tt[:,mask_d]+data[:,mask_d])/2
+
+            tt /= trans_data[:,None,None]
+            
+            dd1 = np.nanmean(tt[:,:,xidx], axis=(1,2))
+            if bkg_thresh is None:
+                c,b = np.histogram(dd1[~np.isinf(dd1)], bins=100, range=[0, np.mean(dd1[~np.isinf(dd1)])])
+                bkg_thresh = b[1:][np.argwhere(c>np.max(c)/2)].flatten()[0]
+    
+            bidx = (dd1<bkg_thresh)
+            if len(dd1[bidx])<=1:
+                raise Exception(f"did not find valid bkg (thresh={bkg_thresh}) ...")
+    
+            bkg = np.average(tt[bidx,:,:], axis=0)
+            tt -= bkg
+    
+            if "subtracted" in fh5[f"{sn}/qphi"].keys():
+                fh5[f"{sn}/qphi/subtracted/d"][...] = tt
+            else:
+                fh5.create_dataset(f"{sn}/qphi/subtracted/d", data=tt)
+            for k in fh5[f"{sn}/qphi/merged"].attrs.keys():
+                fh5[f"{sn}/qphi/subtracted"].attrs[k] = fh5[f"{sn}/qphi/merged"].attrs[k]
+
 def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):    
     """    
     sc is the shaping factor
