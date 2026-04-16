@@ -122,7 +122,7 @@ def recombine(coef, method="nmf"):
     
 
 class ComponentSeparator:
-    def __init__(self, datasets, qmask=None, datakey="Iq", subkey="subtracted"):
+    def __init__(self, datasets, sc=1., qmask=None, datakey="Iq", subkey="subtracted"):
         """ datasets should be of the type h5xs_an
             each dataset should have the require data present, with the same qgrid
             use qmask to control which part of the scattering profile to be included in component separation
@@ -134,10 +134,11 @@ class ComponentSeparator:
         self.qmask = qmask
         self.dk = datakey
         self.sk = subkey
+        self.sc = sc
         self.data1d = self.get_data()
     
     def get_data(self):
-        return np.vstack([dt.proc_data['overall'][self.dk][self.sk][:,self.qmask] for dt in self.dts])
+        return np.vstack([(dt.proc_data['overall'][self.dk][self.sk]*sc)[:,self.qmask] for dt in self.dts])
 
     def change_qmask(self, qmask):
         """ update the data used for component separation

@@ -441,7 +441,7 @@ class h5xs_an(h5xs):
         return True
 
     @h5_file_access
-    def has_data(self, data_key, sub_key=None):
+    def has_data(self, data_key, sub_key=None, check_all_samples=False):
         """ this will check the file instead of proc_data in memory
             Assume that if 'overall' exists, the processed data should be under it
             Otherwise, there is a single sample and the processed data is under that
@@ -449,18 +449,23 @@ class h5xs_an(h5xs):
         samples = list(self.fh5.keys())
         if len(self.samples)==0:
             return False
-        if 'overall' in samples:
-            sn = 'overall'
-        elif len(self.samples)>1:
-            raise Exception("Expect only one sample_name in analysis results without an overall group: ", self.samples)
+
+        if check_all_samples:  # exclude overall, if it exists
+            samples = self.samples
         else:
-            sn = self.samples[0]
-        
-        if not data_key in self.fh5[sn].keys():
-            return False
-        if sub_key:
-            if not sub_key in self.fh5[sn][data_key].keys():
+            if 'overall' in samples: 
+                samples = ['overall']
+            elif len(self.samples)>1:   # not sure what's the targeted use case here
+                raise Exception("Expect only one sample_name in analysis results without an overall group: ", self.samples)
+            #else:      
+            #    sn = self.samples[0]
+
+        for sn in samples:
+            if not data_key in self.fh5[sn].keys():
                 return False
+            if sub_key:
+                if not sub_key in self.fh5[sn][data_key].keys():
+                    return False
     
         return True
    
