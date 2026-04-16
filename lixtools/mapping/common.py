@@ -417,29 +417,30 @@ def sub_bkg_qphi(dt, bkg_x_range=[0.03, 0.08], ref_trans=5000, bkg_thresh=None):
             if "subtracted" in fh5[f"{sn}/qphi"].keys():
                 fh5[f"{sn}/qphi/subtracted/d"][...] = tt
             else:
-                fh5.create_dataset(f"{sn}/qphi/subtracted/d", data=tt)
+                fh5.create_dataset(f"{sn}/qphi/subtracted/d", data=tt, chunks=True, compression='lzf')
             for k in fh5[f"{sn}/qphi/merged"].attrs.keys():
                 fh5[f"{sn}/qphi/subtracted"].attrs[k] = fh5[f"{sn}/qphi/merged"].attrs[k]
 
-def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):    
+def bin_q_data_dask(fn, sn, sc, dezinger, trans_cor, ref_trans, qphi_grp="merged"):    
     """    
     sc is the shaping factor
     q_range=[0.01, 2.5], phi_range=None, dezinger='1d'
     """
     
     with h5py.File(fn, "r", swmr=True) as fh5:
-        Iqphi = da.array(fh5[f'{sn}/qphi/merged/d'])
+        Iqphi = da.array(fh5[f'{sn}/qphi/{qphi_grp}/d'])
         #ref_trans = np.average(fh5[f'{sn}/attrs/transmitted'])   #### this should be given externally
         trans_data = fh5[f'{sn}/attrs/transmitted'][:Iqphi.shape[0]]/ref_trans    # issue with transmitted data being too long
 
-        dm = fh5[f'{sn}/qphi/merged/d'][0]
-        Np = int(dm.shape[0]/2)
-        w0 = np.zeros_like(dm, dtype=np.int8)
-        w0[~np.isnan(dm)] = 1
-        w = w0 + np.vstack([w0[Np:,:], w0[:Np,:]])
-
-        # apply symmetry
-        Iqphi1 = da.nansum(da.array([Iqphi, da.concatenate([Iqphi[:,Np:,:], Iqphi[:,:Np,:]], axis=1)]), axis=0) / w        
+        if qphi_grp=="merged":
+            dm = fh5[f'{sn}/qphi/{qphi_grp}/d'][0]
+            Np = int(dm.shape[0]/2)
+            w0 = np.zeros_like(dm, dtype=np.int8)
+            w0[~np.isnan(dm)] = 1
+            w = w0 + np.vstack([w0[Np:,:], w0[:Np,:]])
+            Iqphi1 = da.nansum(da.array([Iqphi, da.concatenate([Iqphi[:,Np:,:], Iqphi[:,:Np,:]], axis=1)]), axis=0) / w
+        else:
+            Iqphi1 = Iqphi
 
         if dezinger=="median":  # this should be able to get rid of sharp peaks
             Iq = da.nanmedian(Iqphi1, axis=-2)
@@ -449,7 +450,7 @@ def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):
         if dezinger=="1d":  # apply some additional smoothing/peak removal opes
             print("1d dezinger for bin_q_data_dask() not yet implemented")
 
-        if trans_cor:
+        if qphi_grp=="merged":  # ignoring trans_cor
             idx = (trans_data>0)
             Iq[idx,:] = (Iq[idx,:].T/trans_data[idx]).T  
 
@@ -459,14 +460,14 @@ def bin_q_data_dask(fn,sn,sc,dezinger,trans_cor,ref_trans):
     return ret
 
 def get_q_data_dask(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", save_to_overall=True,
-               dezinger=None, trans_cor=True, ref_trans=5000, debug=True):
+               dezinger=None, trans_cor=True, ref_trans=5000, qphi_grp="merged", debug=True):
     """ 
     """        
     with h5py.File(dt.fn, "r") as fh5:
         qgrid = fh5[f"{dt.samples[0]}/qphi"].attrs['xc']
     idx = ((qgrid>=q_range[0])&(qgrid<=q_range[1]))
     sc = scf(qgrid, q0=q0, ex=ex)
-    Iqs = {sn:bin_q_data_dask(dt.fn, sn, sc, dezinger, trans_cor, ref_trans) for sn in dt.samples}
+    Iqs = {sn:bin_q_data_dask(dt.fn, sn, sc, dezinger, trans_cor, ref_trans, qphi_grp) for sn in dt.samples}
     
     nm = f"Iq{ext}"
     if save_to_overall:
@@ -483,9 +484,9 @@ def get_q_data_dask(dt, q0=0.08, ex=2, q_range=[0.01, 2.5], ext="", save_to_over
         #with ProgressBar():
         #    data.to_hdf5(dt.fn, f"{sn}/{nm}/merged")
         #dt.set_h5_attr(f"{sn}/{nm}", "type", "ndarray")        
-        dt.add_proc_data(sn, nm, 'merged', data)
-        dt.save_data(sn, nm, 'merged')
-        dt.set_h5_attr(f"{sn}/{nm}/merged", "qgrid", qgrid[idx]) 
+        dt.add_proc_data(sn, nm, qphi_grp, data)
+        dt.save_data(sn, nm, qphi_grp)
+        dt.set_h5_attr(f"{sn}/{nm}/{qphi_grp}", "qgrid", qgrid[idx]) 
 
 def sub_bkg_q_dask(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=None, save_to_overall=True):
     """ bkg_thresh
@@ -520,33 +521,35 @@ def sub_bkg_q_dask(dt, bkg_x_range=[0.03, 0.08], ext="", bkg_thresh=None, mask=N
             fh5[f"{sn}/Iq{ext}/subtracted"].attrs["qgrid"] = xcor 
             fh5[f"{sn}/Iq{ext}/merged"].attrs["bkg"] = bkg 
 
-def bin_phi_data_dask(fn,sn,q_range,dezinger,trans_cor,ref_trans):    
+def bin_phi_data_dask(fn,sn,q_range,dezinger,trans_cor,ref_trans,qphi_grp):    
     """
     q_range, bkg_q_range, dezinger=True
     """
     
     with h5py.File(fn, "r", swmr=True) as fh5:
-        Iqphi = da.array(fh5[f'{sn}/qphi/merged/d'])
+        Iqphi = da.array(fh5[f'{sn}/qphi/{qphi_grp}/d'])
         #ref_trans = np.average(fh5[f'{sn}/attrs/transmitted'])   #### this should be given externally
         trans_data = fh5[f'{sn}/attrs/transmitted'][:Iqphi.shape[0]]/ref_trans    # issue with transmitted data being too long
         qgrid = fh5[f'{sn}/qphi'].attrs['xc']
+
+        if qphi_grp=="merged":
+            dm = fh5[f'{sn}/qphi/merged/d'][0]
+            Np = int(dm.shape[0]/2)
+            w0 = np.zeros_like(dm, dtype=np.int8)
+            w0[~np.isnan(dm)] = 1
+            w = w0 + np.vstack([w0[Np:,:], w0[:Np,:]])    
+            # apply symmetry
+            Iqphi1 = da.nansum(da.array([Iqphi, da.concatenate([Iqphi[:,Np:,:], Iqphi[:,:Np,:]], axis=1)]), axis=0) / w        
+        else: 
+            Iqphi1 = Iqphi
         
-        dm = fh5[f'{sn}/qphi/merged/d'][0]
-        Np = int(dm.shape[0]/2)
-        w0 = np.zeros_like(dm, dtype=np.int8)
-        w0[~np.isnan(dm)] = 1
-        w = w0 + np.vstack([w0[Np:,:], w0[:Np,:]])
-
-        # apply symmetry
-        Iqphi1 = da.nansum(da.array([Iqphi, da.concatenate([Iqphi[:,Np:,:], Iqphi[:,:Np,:]], axis=1)]), axis=0) / w        
-
         idx = ((qgrid>=q_range[0])&(qgrid<=q_range[1]))
         if dezinger:
             Iphi = da.nanmedian(Iqphi1[:,:,idx], axis=-1)
         else:
             Iphi = da.nanmean(Iqphi1[:,:,idx], axis=-1)
 
-        if trans_cor:
+        if qphi_grp=="merged":  # ignoring trans_cor
             idx = (trans_data>0)
             Iphi[idx,:] = (Iphi[idx,:].T/trans_data[idx]).T  
 
@@ -557,11 +560,11 @@ def bin_phi_data_dask(fn,sn,q_range,dezinger,trans_cor,ref_trans):
     return ret
 
 def get_phi_data_dask(dt, q_range, sub_key, 
-                      ext="", bkg_thresh=0.6e-2, save_to_overall=True,
+                      ext="", bkg_thresh=0.6e-2, save_to_overall=True, qphi_grp="merged",
                       dezinger=True, trans_cor=True, ref_trans=5000, debug=False):
     """ 
     """
-    Iphis = {sn:bin_phi_data_dask(dt.fn, sn, q_range, dezinger, trans_cor, ref_trans) for sn in dt.samples}
+    Iphis = {sn:bin_phi_data_dask(dt.fn, sn, q_range, dezinger, trans_cor, ref_trans, qphi_grp) for sn in dt.samples}
     nm = f"Iphi{ext}"
     if save_to_overall:
         sns = ['overall']
@@ -894,7 +897,7 @@ def get_cap_mask(dt, ref_key="xrf_elastic", vmin=60, n_blur=5, n_rep_dilate=3, p
     
 
 def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
-              default_cmap='binary', cust_cmaps={}, cmax={}, cmin={}, cm_scale=1., 
+              default_cmap='binary', cust_cmaps={}, cmax={}, cmin={}, cm_scale=1., same_pixel_size=True,
               space=0, aspect='auto', sample_in_row=True, roi_w=0, roi_h=0,
               use_alpha_for_all=False, alpha_key="int_cell_Iq", alpha_cutoff=0.03, flat_alpha=False, save_fn=None, dpi=300):
     """
@@ -908,6 +911,9 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
     if sub_keys is None:
         sub_keys = dt.proc_data[sn][data_key].keys()
     data = []
+    map_size_pixel = {}
+    map_size_physical = {}
+    
     for dd0 in data0:
         dd = {} 
 
@@ -1018,7 +1024,7 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
         plt.savefig(f"{save_fn}.png", dpi=dpi)
 
 
-def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), **kwargs):
+def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), axis_off=False, **kwargs):
     """ mms is a list of MatrixWithCorrds
         fn is the file to write the video to
         labels are displayed as the plot tilte in each frame
@@ -1039,10 +1045,16 @@ def make_video(mms, fn, labels=None, fps=3, figsize=(4,4), **kwargs):
     frames = []
     for i in range(nfr):
         fig,ax = plt.subplots(figsize=figsize)
-        mms[i].plot(ax=ax, **kwargs)
+        if isinstance(mms[i], MatrixWithCoords):
+            mms[i].plot(ax=ax, **kwargs)
+        else:
+            ax.imshow(mms[i], **kwargs)
+        if axis_off:
+            plt.axis('off')
         #plt.subplots_adjust(top=0.85, right=0.85)
         ax.set_title(labels[i], y=1.1)
         plt.tight_layout()
+        #plt.subplots_adjust(hspace=0.05, wspace=0.05, left=0.05, right=0.95, top=0.94, bottom=0.05)
         #plt.show()
         
         # this may be slower
@@ -1105,7 +1117,7 @@ def make_video_multimap(sn, datakey, map_list=None, fr_labels=None,
         asp = sino_scale_y
         nfr = shp[1]
         h0 = asp*w0*shp[0]/shp[-1]+0.08
-        fr_labels = [f'phi={ph:.2f}' for ph in phi_list]
+        fr_labels = [f'proj={ph:.2f}' for ph in phi_list]
     else:
         nfr = shp[0]
         asp = 1
@@ -1143,7 +1155,11 @@ def make_video_multimap(sn, datakey, map_list=None, fr_labels=None,
         print(f"processing frame #{fr} ...      \r", end="")
         fig,axs = plt.subplots(figsize=(w0*ncols, h0*nrows), nrows=nrows, ncols=ncols)
         fig.suptitle(fr_labels[fr], y=1)
-            
+        if ncols==1:
+            axs = np.expand_dims(axs, axis=1)
+        elif nrows==1:
+            axs = np.expand_dims(axs, axis=0)
+                        
         for i in range(nrows):
             for j in range(ncols):
                 n = i*ncols+j

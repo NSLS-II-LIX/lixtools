@@ -278,15 +278,15 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, data_sub_key,
 
 
 def segment_EBWP(tms, n_blur=13, n_blur_pith=25, th_bark=130,
-                 pith_pix=None, bkg_pix=[0,0],
+                 pith_pix=None, bkg_pix=[0,0], cell_key="int_cell_Iq", amor_key="int_amor_Iq",
                  pith_fill_pix_list=[], bark_remove_pix_list=[]):
     """ create masks for empty/bark/wood/pith
         the input should be a collection of maps, e.g. tms = dt.proc_data['overall']['tomo']
         that correspond to the cross-section of a plant stem
     """
-    d1 = cv.GaussianBlur(tms['int_amor_Iq'].d, (9,9),0)
+    d1 = cv.GaussianBlur(tms[amor_key].d, (9,9),0)
     im1 = np.array(d1/np.max(d1)*255, dtype=np.uint8)
-    d2 = cv.GaussianBlur(tms['int_cell_Iq'].d, (9,9),0)
+    d2 = cv.GaussianBlur(tms[cell_key].d, (9,9),0)
     im2 = np.array(d2/np.max(d2)*255, dtype=np.uint8)
     
     cc = np.array(feature.canny(im2)*255, dtype=np.uint8)
