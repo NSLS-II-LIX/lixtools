@@ -52,3 +52,7 @@ h5sol_fc and GUI
 
 2024Mar:
 numerous revisions and additions related to scattering tomography
+
+2026Apr:
+Initial release of muscle diffraction code authored by troykn2010
+
