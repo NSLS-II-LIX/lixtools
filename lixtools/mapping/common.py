@@ -48,7 +48,6 @@ def hop(phi, I, plot=False):
     phi1[idx] -= 180*(np.floor(phi1[idx]/180+0.5))
     phi1[idx1] -= 180*(np.floor(phi1[idx1]/180+0.5))
 
-    if plot:
         plt.figure()
         plt.plot(phi1,I,'.')
     
@@ -896,12 +895,13 @@ def get_cap_mask(dt, ref_key="xrf_elastic", vmin=60, n_blur=5, n_rep_dilate=3, p
     return (mask2>th)
     
 
-def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx=0, 
-              default_cmap='binary', cust_cmaps={}, cmax={}, cmin={}, cm_scale=1., same_pixel_size=True,
+def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, max_w=10, max_h=4, Nx_min=0, 
+              default_cmap='binary', cust_cmaps={}, cmax={}, cmin={}, cm_scale=1.,
               space=0, aspect='auto', sample_in_row=True, roi_w=0, roi_h=0,
               use_alpha_for_all=False, alpha_key="int_cell_Iq", alpha_cutoff=0.03, flat_alpha=False, save_fn=None, dpi=300):
     """
         cust_cmaps a dictionary that specifies sub_keys that should use customized colormaps
+        use Nx_min to control the span of the map, if the maps plotted together have different sizes
     """
     if isinstance(dt, list):
         data0 = [t.proc_data['overall'][data_key] for t in dt]
@@ -998,8 +998,8 @@ def plot_data(dt: type(h5xs_scan), data_key, sub_keys=None, auto_scale=False, ma
                 aspect = aspect
             mm = d0[k].copy()
             Nx0 = len(mm.xc)
-            if Nx>Nx0 and data_key=="tomo":
-                pw = int((Nx-Nx0)/2)
+            if Nx_min>Nx0 and data_key=="tomo":
+                pw = int((Nx_min-Nx0)/2)
                 mm.d = np.pad(mm.d, pw)
                 mask = np.pad(mask, pw)
                 #ma.d = np.pad(ma.d, pw)

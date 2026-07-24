@@ -3,7 +3,7 @@ from lixtools.hdf.scan import calc_tomo
 from lixtools.mapping.common import make_map_from_overall_attr
 import numpy as np
 import multiprocessing as mp
-import cv2 as cv
+import cv2
 import pylab as plt
 from skimage import feature,morphology,filters
 
@@ -226,10 +226,36 @@ def get_MFA_basis_set(phi, prof, w0=3, dmfa=4, q0=1.6, xene=15.0, include_consta
     
     return mfs,AA
 
-def prep_mfa_data(dt: type(h5xs_scan), rot_center, data_sub_key, 
-                  algorithm="pml_hybrid", num_iter=60, ref_key="absorption", ref_cutoff=0.02, base=0)-> None:
+
+def make_Iphi_maps(dt: type(h5xs_scan), data_sub_key, save_overall=True, ref_key="absorption", base=0)-> None:
     """ base is subtracted as scattering background 
     """
+    phi = dt.phigrid
+    idx = ((phi>=-90)&(phi<=90))
+    phi0 = phi[idx]
+
+    if save_overall:
+        mms = []
+        for i in np.arange(len(phi))[idx]:
+            mm = make_map_from_overall_attr(dt, dt.proc_data["overall"]['Iphi'][data_sub_key][:, i], 
+                                            template_grp=ref_key, map_name=None)
+            mms.append(mm)
+    
+        dt.proc_data["overall"]['maps'][f'Iphi-{data_sub_key}'] = mms
+        dt.save_data(save_sns=["overall"], save_data_keys=['maps'], save_sub_keys=[f'Iphi-{data_sub_key}'])
+        dt.set_h5_attr(f'overall/maps/Iphi-{data_sub_key}', 'phi', phi0)
+    else:
+        # we are making maps based on data_key other than 'attrs'
+        dt.make_map_from_attr(save_overall=False, attr_names=[f"Iphi/{data_sub_key}"], correct_for_transsmission=False)
+        dt.set_h5_attr(f'overall/maps/Iphi-{data_sub_key}', 'phi', phi)
+
+def prep_mfa_data(dt: type(h5xs_scan), rot_center, data_sub_key, 
+                  algorithm="pml_hybrid", num_iter=60, ref_key="absorption", ref_cutoff=0.02, base=0)-> None:
+    """ 
+        construction of Iphi maps is now done by make_Iphi_maps()
+        base is subtracted as scattering background 
+    """
+    """  
     #phi = dt.get_h5_attr(f"overall/Iphi/{data_sub_key}", "phigrid")
     phi = dt.phigrid
     idx = ((phi>=-90)&(phi<=90))
@@ -242,7 +268,9 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, data_sub_key,
 
     dt.proc_data['overall']['maps'][f'Iphi-{data_sub_key}'] = mms
     dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=[f'Iphi-{data_sub_key}'])
-        
+    """    
+    phi0 = dt.get_h5_attr(f'overall/maps/Iphi-{data_sub_key}', 'phi')
+    mms = dt.proc_data['overall']['maps'][f'Iphi-{data_sub_key}']
     pool = mp.Pool(8)
     jobs = []
     kwargs = {'center':rot_center, 'algorithm': algorithm, 'num_iter': num_iter}
@@ -273,7 +301,6 @@ def prep_mfa_data(dt: type(h5xs_scan), rot_center, data_sub_key,
     dt.proc_data['overall']['tomo'][f'mfa-{data_sub_key}'] = mm    
     dt.save_data(save_sns='overall', save_data_keys=['tomo'], 
                  save_sub_keys=[f'Iphi-{data_sub_key}', f'mfa-{data_sub_key}'])
-    dt.set_h5_attr(f"overall/maps/Iphi-{data_sub_key}", "phi", phi0)
     dt.set_h5_attr(f"overall/tomo/Iphi-{data_sub_key}", "phi", phi0)
 
 
@@ -284,40 +311,40 @@ def segment_EBWP(tms, n_blur=13, n_blur_pith=25, th_bark=130,
         the input should be a collection of maps, e.g. tms = dt.proc_data['overall']['tomo']
         that correspond to the cross-section of a plant stem
     """
-    d1 = cv.GaussianBlur(tms[amor_key].d, (9,9),0)
+    d1 = cv2.GaussianBlur(tms[amor_key].d, (9,9),0)
     im1 = np.array(d1/np.max(d1)*255, dtype=np.uint8)
-    d2 = cv.GaussianBlur(tms[cell_key].d, (9,9),0)
+    d2 = cv2.GaussianBlur(tms[cell_key].d, (9,9),0)
     im2 = np.array(d2/np.max(d2)*255, dtype=np.uint8)
     
     cc = np.array(feature.canny(im2)*255, dtype=np.uint8)
-    cc = cv.GaussianBlur(cc, (n_blur,n_blur), 0)
+    cc = cv2.GaussianBlur(cc, (n_blur,n_blur), 0)
     cc[cc>16] = 255
     cc[cc<=16] = 0
-    _,cc1,_,_ = cv.floodFill(cc, None, bkg_pix, 127)
+    _,cc1,_,_ = cv2.floodFill(cc, None, bkg_pix, 127)
     if pith_pix is None:
         pitch_pix = [int(cc1.shape[0]/2)+10,int(cc1.shape[1]/2)]
-    _,cc2,_,_ = cv.floodFill(cc1, None, pitch_pix, 64)  # needs adjustment
+    _,cc2,_,_ = cv2.floodFill(cc1, None, pitch_pix, 64)  # needs adjustment
     
     bkg_mask = np.array((cc2==127), dtype=np.uint8)
     kernel = np.ones((n_blur, n_blur), np.uint8) 
-    bkg_mask = cv.morphologyEx(bkg_mask, cv.MORPH_CLOSE, kernel)
+    bkg_mask = cv2.morphologyEx(bkg_mask, cv2.MORPH_CLOSE, kernel)
     
     cc = np.array(feature.canny(im2)*255, dtype=np.uint8)
-    cc = cv.GaussianBlur(cc, (n_blur,n_blur), 0)
+    cc = cv2.GaussianBlur(cc, (n_blur,n_blur), 0)
     cc[cc>16] = 255
     cc[cc<=16] = 0
     _,cc1,_,_ = cv.floodFill(cc, None, bkg_pix, 127)
 
     if pith_pix is None:
         pith_pix = [int(cc1.shape[0]/2)+10,int(cc1.shape[1]/2)]
-    _,cc2,_,_ = cv.floodFill(cc1, None, pith_pix, 64)  # needs adjustment
+    _,cc2,_,_ = cv2.floodFill(cc1, None, pith_pix, 64)  # needs adjustment
 
     pith_mask = np.array((cc2==64), dtype=np.uint8)
     kernel = np.ones((n_blur_pith, n_blur_pith), np.uint8) 
-    pith_mask = cv.morphologyEx(pith_mask, cv.MORPH_CLOSE, kernel)
+    pith_mask = cv2.morphologyEx(pith_mask, cv2.MORPH_CLOSE, kernel)
 
     for pix in pith_fill_pix_list:
-        _,bark_mask,_,_ = cv.floodFill(pith_mask, None, pix, 1)  # pixel position
+        _,bark_mask,_,_ = cv2.floodFill(pith_mask, None, pix, 1)  # pixel position
     
     plt.figure(figsize=(10,3))
     plt.subplot(121)
@@ -329,17 +356,17 @@ def segment_EBWP(tms, n_blur=13, n_blur_pith=25, th_bark=130,
     
     kernel = np.ones((n_blur, n_blur), np.uint8) 
     bark_mask = np.array((im2>th_bark)&(bkg_mask==0)&(pith_mask==0), dtype=np.uint8)
-    bark_mask = cv.morphologyEx(bark_mask, cv.MORPH_CLOSE, kernel)
-    bark_mask = cv.morphologyEx(bark_mask, cv.MORPH_OPEN, kernel)
+    bark_mask = cv2.morphologyEx(bark_mask, cv2.MORPH_CLOSE, kernel)
+    bark_mask = cv2.morphologyEx(bark_mask, cv2.MORPH_OPEN, kernel)
     #bark_mask = morphology.remove_small_objects(bark_mask, min_size=20)
 
     for pix in bark_remove_pix_list:
-        _,bark_mask,_,_ = cv.floodFill(bark_mask, None, pix, 0)  # pixel position
+        _,bark_mask,_,_ = cv2.floodFill(bark_mask, None, pix, 0)  # pixel position
     
     kernel = np.ones((n_blur,n_blur),np.uint8)
     woody_mask = np.array((bkg_mask==0)&(bark_mask==0)&(pith_mask==0), dtype=np.uint8)
-    woody_mask = cv.erode(woody_mask, kernel, iterations = 3)
-    woody_mask = cv.dilate(woody_mask, kernel, iterations = 2)
+    woody_mask = cv2.erode(woody_mask, kernel, iterations = 3)
+    woody_mask = cv2.dilate(woody_mask, kernel, iterations = 2)
     #woody_mask = morphology.remove_small_objects(woody_mask, min_size=20)
     
     plt.figure(figsize=(10,3))
