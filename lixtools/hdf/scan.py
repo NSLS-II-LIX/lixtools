@@ -107,6 +107,7 @@ class h5xs_scan(h5xs_an):
             for i,ssn in enumerate(self.samples):
                 if not 'scan' in self.attrs[ssn].keys():
                     self.attrs[ssn]['scan'] = get_scan_parms(self.h5xs[ssn], ssn)
+                # cheap trick to cram both sn and index into a single number
                 self.add_proc_data(ssn, 'attrs', '_idx', 0.001*i+np.arange(np.prod(self.attrs[ssn]['scan']['shape'])))
             self.sid = self.make_map_from_attr(attr_names='_idx', return_dict=True, correct_for_transsmission=False)
                 
@@ -183,11 +184,18 @@ class h5xs_scan(h5xs_an):
             for sn in self.h5xs.keys():
                 if not 'scan' in self.attrs[sn].keys():
                     self.attrs[sn]['scan'] = get_scan_parms(self.h5xs[sn], sn)
-                if an not in self.proc_data[sn]['attrs'].keys():
-                    raise Exception(f"attribue {an} cannot be found for {sn}.")
                 
                 # attr could be 2D, e.g. for multi-element XRF data
-                attr_data = self.proc_data[sn]['attrs'][an]
+                # trick to use data as attr, if the name contains /
+                if '/' in an:
+                    ddk,dsk = an.split('/')
+                    attr_data = self.proc_data[sn][ddk][dsk]
+                    map_sub_key = an.replace("/", "-")
+                else:
+                    if an not in self.proc_data[sn]['attrs'].keys():
+                        raise Exception(f"attribue {an} cannot be found for {sn}.")
+                    attr_data = self.proc_data[sn]['attrs'][an]
+                    map_sub_key = an
                 if len(attr_data.shape)==1:
                     attr_dim = 1
                     attr_data = [attr_data]
@@ -216,7 +224,7 @@ class h5xs_scan(h5xs_an):
                 if return_dict:
                     ret[sn] = maps
                 else:
-                    self.add_proc_data(sn, map_data_key, an, maps)
+                    self.add_proc_data(sn, map_data_key, map_sub_key, maps)
 
             # assume the scans are of the same type, therefore start from the same direction
             if save_overall:           
