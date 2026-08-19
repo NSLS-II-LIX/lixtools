@@ -1,6 +1,6 @@
 # based on forward calculation implemented by Mani Valleti
 # manuscript in prepration
-# assited by ChatGPT
+# assited by ChatGPT in the implementation of MLEM reconstruction
 
 import tensorflow as tf
 import numpy as np
