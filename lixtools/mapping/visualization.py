@@ -1,10 +1,10 @@
 import numpy as np
 import pylab as plt
-import cv2
+import cv2,PIL,io
 import h5py
 from scipy import ndimage
 from lixtools.hdf import h5xs_an,h5xs_scan
-
+from py4xs.data2d import MatrixWithCoords
 
 def get_cap_mask(dt, ref_key="xrf_elastic", vmin=60, n_blur=5, n_rep_dilate=3, plot_data=False):
     """ this is useful for measurements done in glass capillaries
