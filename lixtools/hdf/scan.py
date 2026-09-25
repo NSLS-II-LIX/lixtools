@@ -58,7 +58,7 @@ class h5xs_scan(h5xs_an):
                 
         return m.flatten()
 
-    def make_map_from_overall_attr(self, attr, correct_for_transsmission=True):
+    def make_map_from_overall_attr(self, attr, ref_incident=-1, correct_for_absorption=False):
         """ this is used to calculate maps from attrubutes that are assigned to "overall" by simple stacking, and 
             therefore need to be reorganized to recover the actual shape of the data
             e.g. coefficients from NMF, or data extracted from the I(q) or I(phi) 1D profiles
@@ -89,10 +89,13 @@ class h5xs_scan(h5xs_an):
 
         # assume the scans are of the same type, therefore start from the same direction
         mm = maps[0].merge(maps[1:])
-        #if "overall" not in self.proc_data.keys():
-        #    self.proc_data['overall'] = {}
-        #    self.proc_data['overall']['maps'] = {}
-        #self.proc_data['overall']['maps'][an] = mm
+
+        self.load_data("overall", ['maps'], ['incident', 'absorption'])
+        if ref_incident>0:
+            mm.d *= ref_incident/self.proc_data['overall']['maps']['incident'].d
+        elif correct_for_absorption:
+            mm.d /= np.exp(self.proc_data['overall']['maps']['absroption'].d)
+        
         return mm
     
     def get_index_from_map_coords(self, sn, xc, yc, map_name=None, map_data_key='maps'):
@@ -143,7 +146,7 @@ class h5xs_scan(h5xs_an):
         raise Exception("already at the end of all data: ", idx)
     
     def make_map_from_attr(self, save_overall=True, map_data_key='maps', attr_names="transmission", 
-                           ref_int_map=None, ref_trans=-1, pk_prominence_cutoff = 500,
+                           ref_int_map=None, ref_trans=-1, pk_prominence_cutoff=500, ref_incident=-1,
                            correct_for_transsmission=True, recalc_trans_map=True, return_dict=False,
                            debug=True):
         """ for convenience in data processing, all attributes extracted from the data are saved as

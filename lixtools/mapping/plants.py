@@ -3,7 +3,7 @@ from lixtools.hdf.scan import calc_tomo
 from lixtools.mapping.common import make_map_from_overall_attr
 import numpy as np
 import multiprocessing as mp
-import cv2
+import cv2,json
 import pylab as plt
 from skimage import feature,morphology,filters
 
@@ -142,37 +142,74 @@ def calc_CI(dt: type(h5xs_scan), sn='overall', data_key="tomo",
     dt.save_data(save_sns=[sn], save_data_keys=[data_key], save_sub_keys=['CI'])
 
 def calc_CI2(dt: type(h5xs_scan), sn='overall', data_key="tomo", 
-            cell_key='int_cell_Iq', amor_key='int_amor_Iq',
-            sc=1., amor_cutoff=0.02, show_mask=False)-> None:
+             cell_key='int_cell_Iq', amor_key='int_amor_Iq', amor_cutoff=0.02,
+             blockSize=21, C=4, erosion_size=2,
+             sc=1., show_mask=False)-> None:
     """ sc is needed to account for the intensity difference between cellulose and amorphous 
         components due to the way they are calculated: span of q-range, shaping factor
+
+        parameters for adaptive thresholding
+            blockSize: the size of the neighbourhood area
+            C: a constant that is subtracted from the mean or weighted sum of the neighbourhood pixels
     """
     mm = dt.proc_data[sn][data_key][cell_key].copy()
-    dc = dt.proc_data[sn][data_key][cell_key].d
-    da = dt.proc_data[sn][data_key][amor_key].d
+    dc = np.copy(dt.proc_data[sn][data_key][cell_key].d)
+    da = np.copy(dt.proc_data[sn][data_key][amor_key].d)
+    da[da<amor_cutoff] = 0
 
     amo1 = np.array(da/np.max(da)*256, dtype=np.uint8)
-    amo2 = cv2.adaptiveThreshold(amo1, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 4)
-    amo2[da<amor_cutoff] = 0
-    idx = (amo2>0)
+    ret, otsu = cv2.threshold(amo1,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)   # sample outline
+    amo2 = 255-cv2.adaptiveThreshold(amo1, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, blockSize, C)
+
+    erosion_type = 0
+    element = cv2.getStructuringElement(erosion_type, (2*erosion_size + 1, 2*erosion_size+1), (erosion_size, erosion_size))
+    erd = cv2.erode(amo2, element)
+    amo3 = cv2.dilate(erd, element)          # this helps to define the vasular vessels better
+    
+    mask = (255-amo3)*otsu
+    mask[mask>0]=255
     
     if show_mask:
         plt.figure(figsize=(10,3))
         plt.subplot(131)
-        plt.hist(amo.flatten(), bins=100, alpha=0.3)
+        plt.hist(amo1.flatten(), bins=100, alpha=0.3)
         plt.yscale('symlog')
         plt.subplot(132)
         plt.imshow(amo1, cmap="binary")
         plt.subplot(133)
-        plt.imshow(amo2, cmap="binary")
+        plt.imshow(mask, cmap="binary")
 
     da *= sc
-    mm.d[idx] = (dc-da)[idx]/dc[idx]
-    mm.d[~idx] = 0
+    mm.d[mask<=0] = 0
+    mm.d[mask>0] = (dc[mask>0]-da[mask>0])/dc[mask>0]
     mm.d[np.isinf(mm.d)] = 0
     dt.proc_data[sn][data_key]['CI'] = mm
     dt.save_data(save_sns=[sn], save_data_keys=[data_key], save_sub_keys=['CI'])
+
+    params = {"method": "calc_CI2", "amor_cutoff": amor_cutoff,
+              "blockSize": blockSize, "C": C, "erosion_size": erosion_size}
+    dt.set_h5_attr(f"{sn}/{data_key}/CI", "params", json.dumps(params))
+
+def get_masks_surf_int(dt, dk="int_cell_Iq", thresh=0.03, surf_thk0=20, surf_thk1=50):
+    """ return masks that correspond to the surface and interior of the sample
+        useful for comparing, e.g. CI values, from different parts of the sample 
+    """
+    img0 = dt.proc_data['overall']['tomo'][dk].d
+    img = np.ones_like(img0, dtype=np.uint8)*255
+    img[img0<thresh] = 0
     
+    whole = img 
+    for _ in range(3):
+        img2 = cv2.blur(whole,(15,15))
+        ret,whole = cv2.threshold(img2,127,255,0)
+
+    inside = morph.binary_erosion(whole, morph.disk(surf_thk0))
+    edge = (whole>0) & (inside<1)
+    inside2 = morph.binary_erosion(whole, morph.disk(surf_thk1))
+
+    return edge,inside2
+
+
 from scipy.optimize import nnls
 
 def phiC(nu, alpha, theta):

@@ -530,13 +530,17 @@ class h5xs_an(h5xs):
         """
         if from_raw_data:
             rd = self.h5xs[sn].dset(sub_key, sn=sn, return_reference=False)
-            data = np.array([func(d, **kwargs) for d in rd])
+            data = func(rd, **kwargs)
+            #data = np.array([func(d, **kwargs) for d in rd])
         else:
+            # assuming the data 
             data = np.array([func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]])
         if debug:
             print(f"got data of shape {data.shape}")
+
         #if check_size>0:
         #    data = np.pad(data, (0,check_size-len(data)), constant_values=np.nan)
+        
         if isinstance(attr_name, str):
             self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
         elif isinstance(attr_name, list):

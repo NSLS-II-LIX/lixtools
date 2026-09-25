@@ -754,6 +754,8 @@ def scale_transmitted_maps(dt, sc=170000, quiet=True):
             
 import xraydb,json
 from scipy.optimize import nnls
+from joblib import Parallel,delayed
+from sklearn.linear_model import LinearRegression
 
 def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
     """ basis_set x coeff = data
@@ -765,8 +767,10 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
         therefore the data shape is (m, 1/k), the result shape is (-1, 1/k)
         additionally, work on a limited range of columns (:, n_start:n_end)
     """
+    """ 
     data1 = data[:, n_start:n_end]
     shp = data1.shape
+    
     result = []
     for spec in data1.reshape(-1, shp[-1]):
         try:
@@ -775,7 +779,28 @@ def nnls_decomp(data, basis_set, n_start, n_end, sigma=3):
             coeff,err = nnls(basis_set.T, ndimage.gaussian_filter(spec,sigma))            
         result.append(coeff)
     return np.array(result).reshape(*shp[:-1], -1)
+    """
+    shp0 = data.shape
+    data0 = data.reshape([-1, shp0[-1]])
+    
+    data1 = data0[:, n_start:n_end]
+    shp = data1.shape
 
+    # use joblib for parallelization
+    #results1 = Parallel(n_jobs=8)(delayed(nnls)(basis_set.T, col) for col in data1)
+    #ret1 = np.stack([r[0] for r in results1])
+
+    # use parallelization built in sklearn
+    reg = LinearRegression(positive=True, fit_intercept=False, n_jobs=-1)
+    reg.fit(basis_set.T, data1.T)
+    ret1 = reg.coef_
+    
+    shp2 = list(shp0)
+    shp2[-1] = basis_set.shape[0]
+    ret2 = ret1.reshape(shp2)
+
+    return ret2
+    
 def prep_data_from_pyxrf(dt, ele_list, save_overall=True, xrf_fns=None):
     """ this function populates attrs/xrf_XX based on the results from pyxrf fits
         these results are expected in files listed in h5fns
@@ -797,7 +822,7 @@ def prep_data_from_pyxrf(dt, ele_list, save_overall=True, xrf_fns=None):
     dt.save_data(save_data_keys=['attrs'], save_sub_keys=xrf_list)
     dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)            
 
-def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
+def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None, ref_incident=-1,
                   eNstart=310, eNend=1100, eBin=0.01, pk_width=0.167/2.355):
     """ ele_list, e.g.  ['K_K', 'Ca_K', 'Mn_K', 'Fe_K', 'Cu_K', 'Zn_K']
         pyxrf_param_fn: use this if there is a json file from fitting the summed sepctrum using pyxrf 
@@ -836,8 +861,6 @@ def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
     
     AA = np.vstack(list(fluo_line_profiles.values()))
 
-    print(f"processing {dt.fn.split('/')[-1][:-7]}          ")
-    
     for sn in dt.samples:
         print(f" processing {sn}           \r", end="")
         dt.extract_attr(sn, xrf_list, nnls_decomp, "xsp3", "xsp3_image", from_raw_data=True, 
@@ -845,10 +868,11 @@ def prep_XRF_data(dt, ele_list, save_overall=True, pyxrf_param_fn=None,
     if save_overall:
         sn = 'overall'
     else:
-        sn = dt.samples[0]
+        sn = dt.samples[0]        
+    
     dt.add_proc_data(sn, 'XRF', 'basis', AA)
     dt.save_data(save_sns=[sn], save_data_keys=['XRF'], save_sub_keys=['basis'])
     dt.set_h5_attr(f"{sn}/XRF/basis", "ele_list", json.dumps(ele_list))
     dt.save_data(save_data_keys=['attrs'], save_sub_keys=xrf_list)
-    dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)
+    dt.make_map_from_attr(save_overall=save_overall, attr_names=xrf_list, correct_for_transsmission=False)  # ref_incident is disregarded by this method
     

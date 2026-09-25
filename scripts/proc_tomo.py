@@ -111,6 +111,7 @@ for sample in pp.sample_list:
         sn = sns[0]
     if pp.extract_q_profiles:
         print(f"1a. extract q- profiles ...")
+        # normalization to transmitted intensity is done implicitly, using the default value of ref_trans=5000
         get_q_data_dask(dt, q0=0.06, ex=2.3, q_range=pp.qrange_1d, dezinger=pp.dz, save_to_overall=pp.save_overall)
         d1dk = "merged"
         if pp.subtract_bkg_q:
@@ -171,7 +172,23 @@ for sample in pp.sample_list:
     
     if pp.construct_XRF_maps:
         print(f"2c. create XRF maps ...")
+        # normalize to incident intensity
+        if not sn in dt.proc_data.keys():
+            dt.load_data([sn], ['maps'])
+        elif not 'incident' in dt.proc_data[sn]['maps'].keys():
+            dt.load_data([sn], ['maps'])
+        sc = dt.proc_data[sn]['maps']['incident'].d/pp.ref_incident
+
         prep_XRF_data(dt, pp.ele_list, pyxrf_param_fn=pp.pyxrf_param_fn, eNstart=pp.eNstart, eNend=pp.eNend, save_overall=pp.save_overall)
+
+        mps = dt.proc_data[sn]['maps']
+        xrf_maps = [mn for mn in mps.keys() if 'xrf' in mn and not 'sum' in mn]
+        for k in xrf_maps:
+            for mm in mps[k]:
+                mm.d /= sc
+
+        dt.save_data([sn], ['maps'], xrf_maps)
+
         maps_present = True
 
     if pp.tomo_reconstruction:
@@ -223,7 +240,6 @@ for sample in pp.sample_list:
                 for k in xrf_maps:
                     mm = dt.proc_data['overall']['maps'][k][0].copy()
                     mm.d = np.nansum([m0.d for m0 in dt.proc_data['overall']['maps'][k]], axis=0)
-                    mm.d /= (dt.proc_data['overall']['maps']['incident'].d/pp.ref_incident)
                     dt.proc_data['overall']['maps'][k+"_sum"] = mm
                 fix_maps(dt, map_sub_keys=[k+"_sum" for k in xrf_maps], fix_inf=True)    # sometimes em1/em2 reports 0; this also saves maps  
                 dt.calc_tomo_from_map(attr_names=[k+"_sum" for k in xrf_maps], algorithm=pp.algorithm, 
