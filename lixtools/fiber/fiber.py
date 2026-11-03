@@ -20,13 +20,13 @@ class h5xs_fiber(h5xs_an):
     def __init__(self, fn,*args, **kwargs):
         super().__init__(fn,*args, **kwargs)
 
-    def proc_box(self,sns,box):
+    def proc_box(self,sns,box,savegroup = 'overall',read_data_key='processed',read_sub_key='qxy_SAXS'):
         """
         Process features given by box parameters. Iterates through a list of dicts with inputs for feature detection. 
         box = {
         'label': "M3"; whichever label that makes sense to the user
-        'direction': 'x'; for line analysis through the radial direction and averaging along the azimuthal direction
-        'direction': 'y'; for line analysis through the azimuthal direction and averaging along the radial direction
+        'direction': 'x'; for line analysis through the radial direction and averaging along the axial direction
+        'direction': 'y'; for line analysis through the axial direction and averaging along the radial direction
         'qx_min': number greater than zero in absolute units (1/angstrom)
         'qx_max': some number greater than qx_min
         'qy_min': number greater than zero in absolute units (1/angstrom)
@@ -39,46 +39,46 @@ class h5xs_fiber(h5xs_an):
         }        
         """
 
-        self.load_data(sns,read_data_keys=['processed'],read_sub_keys=['qxy_SAXS'])
+        self.load_data(sns,[read_data_key],[read_sub_key])
 
         #Equator fitting
         LineDatas = []
         for sn in sns:
-            qxy_list = self.proc_data[sn]['processed']['qxy_SAXS'].copy() 
+            qxy_list = self.proc_data[sn][read_data_key][read_sub_key].copy() 
             for qxy in qxy_list:
                 LineDatas.append( self.fit_line_profile(qxy,box) )
-        self.add_proc_data('overall',box['label'],'q(angstrom-1)',LineDatas[0].q)
-        self.add_proc_data('overall',box['label'],'d(nm)',c/LineDatas[0].q)
-        self.add_proc_data('overall',box['label'],'values'     ,np.array( [LineData.values          for LineData in LineDatas]    ))
-        self.add_proc_data('overall',box['label'],'backgrounds',np.array( [LineData.background      for LineData in LineDatas]    ))
-        self.add_proc_data('overall',box['label'],'signals'    ,np.array( [LineData.filtered_values for LineData in LineDatas]    ))
-        self.add_proc_data('overall',box['label'],'fits'       ,np.array( [LineData.fitted_values   for LineData in LineDatas]    ))
+        self.add_proc_data(savegroup,box['label'],'q(angstrom-1)',LineDatas[0].q)
+        self.add_proc_data(savegroup,box['label'],'d(nm)',c/LineDatas[0].q)
+        self.add_proc_data(savegroup,box['label'],'values'     ,np.array( [LineData.values          for LineData in LineDatas]    ))
+        self.add_proc_data(savegroup,box['label'],'backgrounds',np.array( [LineData.background      for LineData in LineDatas]    ))
+        self.add_proc_data(savegroup,box['label'],'signals'    ,np.array( [LineData.filtered_values for LineData in LineDatas]    ))
+        self.add_proc_data(savegroup,box['label'],'fits'       ,np.array( [LineData.fitted_values   for LineData in LineDatas]    ))
         if box['label'] in ['equator','Equator','equators','Equators']:
-            self.add_proc_data('overall',box['label'],'IR'         ,np.array( [LineData.peaks['11']['Area']/(LineData.peaks['10']['Area']+1e-9) 
+            self.add_proc_data(savegroup,box['label'],'IR'         ,np.array( [LineData.peaks['11']['Area']/(LineData.peaks['10']['Area']+1e-9) 
                                                                                                                 for LineData in LineDatas]    ))
         for key in box['peaks'].keys():
-            self.add_proc_data('overall',box['label'],key + '/dspacing(nm)'     ,np.array( [c/LineData.peaks[key]['m1']
+            self.add_proc_data(savegroup,box['label'],key + '/dspacing(nm)'     ,np.array( [c/LineData.peaks[key]['m1']
                                                                                                                 for LineData in LineDatas]    ))
-            self.add_proc_data('overall',box['label'],key + '/area(count nm-1)' ,np.array( [LineData.peaks[key]['Area']/c
+            self.add_proc_data(savegroup,box['label'],key + '/area(count nm-1)' ,np.array( [LineData.peaks[key]['Area']/c
                                                                                                                 for LineData in LineDatas]    ))
-            self.add_proc_data('overall',box['label'],key + '/sigma(nm-1)'      ,np.array( [LineData.peaks[key]['m2']/c
+            self.add_proc_data(savegroup,box['label'],key + '/sigma(nm-1)'      ,np.array( [LineData.peaks[key]['m2']/c
                                                                                                                 for LineData in LineDatas]    ))
-        self.save_data(['overall'],[box['label']])
-        self.set_h5_attr(f"overall/{box['label']}",'box_params', json.dumps(box))
+        self.save_data([savegroup],[box['label']])
+        self.set_h5_attr(f"{savegroup}/{box['label']}",'box_params', json.dumps(box))
 
 
     def grab_fiber_line_profile(self,data2d,direction,qx_min,qx_max,qy_min,qy_max,**kwargs):
         """
         takes in a py4xs/data2d object generated from process_qzy_fiber or Merge_qxy so there's a presumed data structure
         i.e. data2d.d is the +/+ quadrant of the fiber image
-        data2d.yc is the azimuthal direction with range [0,yc.max()]
+        data2d.yc is the axial direction with range [0,yc.max()]
         data2d.xc is the radial direction with range [0,xc.max()] 
         """
         assert qx_min>=0, "qx_min must be greater than or equal to zero"
         assert qx_max>qx_min, "qx_max must be greater than qx_min"
         assert qy_min>=0, "qy_min must be greater than or equal to zero"
         assert qy_max>qy_min, "qy_max must be greater than qy_min"
-        assert direction in ['x','y'], "direction must be either 'x' for fiber radial direction or 'y' for fiber azimuthal direction"
+        assert direction in ['x','y'], "direction must be either 'x' for fiber radial direction or 'y' for fiber axial direction"
 
         new = data2d.copy()
         new.yc = np.flip(new.yc) #hot fix. There's an origin shift SOMEWHERE
@@ -106,7 +106,8 @@ class h5xs_fiber(h5xs_an):
         for key in box_params['peaks'].keys():
             peak = box_params['peaks'][key]
             bounds = [(0,1),(q0*peak['relative_qmin'],q0*peak['relative_qmax']),(peak['absolute_smin'],peak['absolute_smax']) ] #bounds on single gaussian fit
-            LineData.FitSingleGaussian(LineData.q,LineData.filtered_values,label = key,maxiter = 1000,bounds = bounds) #initial fits
+            bool = np.logical_and(LineData.q>=q0*peak['relative_qmin'],LineData.q<q0*peak['relative_qmax'])
+            LineData.FitSingleGaussian(LineData.q[bool],LineData.filtered_values[bool],label = key,maxiter = 1000,bounds = bounds) #initial fits
             LineData.peaks[key]['smin'] = peak['absolute_smin']
             LineData.peaks[key]['smax'] = peak['absolute_smax']
         for update_keys in box_params['update_keys']:
@@ -114,7 +115,13 @@ class h5xs_fiber(h5xs_an):
                 LineData.NGaussianFitKeys(update_keys,maxiter=1000) #Fit 10 and 11 together using initial fits as guesses
             elif box_params['update_method'] == 'NGaussianCluster':
                 LineData.FitClusterWithGaussians(update_keys,maxiter=1000)
-        LineData.ComputeFittedValues(box_params['peaks'].keys())
+            if box_params['update_method'] == 'NGaussianEquator':
+                #hacky method for cardiac slices to fix d11/d10 to sqrt(3)
+                LineData.peaks['11']['qmin'] = LineData.peaks['10']['m1']*1.73205*0.9
+                LineData.peaks['11']['qmax'] = LineData.peaks['10']['m1']*1.73205*1.1
+                LineData.NGaussianFitKeys(['10','11'],maxiter=1000) 
+
+        LineData.ComputeFittedValues([key for key in box_params['peaks'].keys() if 'dummy' not in key and 'Dummy' not in key])
 
         return LineData
 
@@ -139,26 +146,34 @@ class h5xs_fiber(h5xs_an):
         qxy_list = []
         em2_list = []
         for sn in sns:
+            N = len(self.proc_data[sn]['processed']['qxy_SAXS'])
             qxy_list += self.proc_data[sn]['processed']['qxy_SAXS']
-            em2_list += list(self.fh5[sn]["em2/data/em2_ts_SumAll"])
-        removal_bool = [False]*len(qxy_list)
+            em2_list += list(self.fh5[sn]["em2/data/em2_ts_SumAll"][:N]) #em2 raw data has two copies. Dont know why. Grab only first copy
+        
 
         #Exclusion criteria
+        removal_bool = [False]*len(qxy_list)
         IR  = self.proc_data['overall'][params.equator_box['label']]['IR']
         removal_bool = np.logical_or(removal_bool,  np.logical_or(IR<merge_settings['IRmin'],IR>merge_settings['IRmax'])    )
         d10 = self.proc_data['overall'][params.equator_box['label']]['10/dspacing(nm)']
         removal_bool = np.logical_or(removal_bool,  np.logical_or(d10<merge_settings['d10min'],d10>merge_settings['d10max'])    )
         A10 = self.proc_data['overall'][params.equator_box['label']]['10/area(count nm-1)']
         removal_bool = np.logical_or(removal_bool,  np.logical_or(A10<merge_settings['Area10min'],A10>merge_settings['Area10max'])    )
-        
-        removal_index = np.arange(len(qxy_list))[removal_bool]
+        em2_min = np.percentile(em2_list,75)*0.75         #remove if em2 is oddly low
+        removal_bool = np.logical_or(removal_bool,np.array(em2_list)<em2_min    )
 
+        removal_index = np.arange(len(qxy_list))[removal_bool]
         if len(removal_index) == len(qxy_list):
-            print('No images left after exclusion criteria. Now blindly merging all images')
+            print('No images left after exclusion criteria. Resetting to include all images')
             removal_index = []
 
+        #Accept an optional boolean vector provided by the users to exclude datapoints. This supercedes any of the automated removal criterion aboce
+        removal_index = list(removal_index)
+        if 'remove_index' in merge_settings.keys():
+            removal_index += merge_settings['remove_index']
+
         #Remove from list
-        removal_index = sorted(removal_index,reverse = True)
+        removal_index = sorted(set(removal_index),reverse = True)
         for index in removal_index:
             qxy_list.pop(index)
             em2_list.pop(index)
@@ -176,6 +191,12 @@ class h5xs_fiber(h5xs_an):
             self.add_proc_data('overall','merged',box['label']+'/fits'        ,LineData.fitted_values)
             self.add_proc_data('overall','merged',box['label']+'/q(angstrom-1)',LineData.q)
             self.add_proc_data('overall','merged',box['label']+'/d(nm)',c/LineData.q)
+
+            a = np.trapezoid(LineData.filtered_values*LineData.q/c ,LineData.q/c)
+            b = np.trapezoid(LineData.filtered_values ,LineData.q/c)
+            self.add_proc_data('overall','merged',box['label']+'/TotalArea(count nm-1)',np.array(b))
+            self.add_proc_data('overall','merged',box['label']+'/d_COM(nm)',np.array(b/a))
+
             for key in box['peaks'].keys():
                 self.add_proc_data('overall','merged',box['label']+'/' + key + '/' + 'dspacing(nm)', np.array(c/LineData.peaks[key]['m1']))
                 self.add_proc_data('overall','merged',box['label']+'/' + key + '/' + 'sigma(nm-1)', np.array(LineData.peaks[key]['m2']/c))
@@ -191,6 +212,18 @@ class h5xs_fiber(h5xs_an):
 
         for box in params.boxes:
             self.set_h5_attr(f"overall/merged/{box['label']}",'box_params', json.dumps(box))
+
+    def proc_cardiac_slice(self,sn,params,ims_perloop = 1,start=None,stop= None):
+        #specialized function for cardiac slice imaging .
+
+        self.load_data(sn,read_data_keys = ['processed'],read_sub_keys=['qxy_SAXS'])
+        qxy_list = self.proc_data[sn]['processed']['qxy_SAXS'][start:stop]
+
+
+        slices = [self.Merge_qxy(qxy_list[s::ims_perloop]) for s in range(ims_perloop)]
+        self.add_proc_data(sn, 'phase_averaged', 'qxy_SAXS', slices)
+        self.save_data([sn], ['phase_averaged'])
+        self.set_h5_attr(f"{sn}/phase_averaged", "Num_phases", ims_perloop )
 
 
     def proc_muscle_livestreaming(self,sn,params):
@@ -257,7 +290,13 @@ class h5xs_fiber(h5xs_an):
             print(f"processing {sn} ...")
         dh5 = self.h5xs[sn]
         with h5py.File(dh5.fn, "r") as fh:
-            imgs = np.array(fh[sn]["pil/data/pil1M_image"],dtype = np.float32)
+            try:
+                #fly scan data structure
+                imgs = np.array(fh[sn]["pil/data/pil1M_image"],dtype = np.float32)
+            except:
+                #RE(ct()) dat astructure
+                imgs = np.array(fh[sn]["primary/data/pil1M_image"],dtype = np.float32)
+
             imgs = np.rot90(imgs, exp.flip, [-2, -1])
 
             #Center by padding and rotate
@@ -299,7 +338,7 @@ class h5xs_fiber(h5xs_an):
             maps = []
 
             for i in range(l):
-                dd2.d = arr_data[i,m//2:,n//2:].T 
+                dd2.d = arr_data[i,m//2:,n//2:].T
                 maps.append(dd2.copy())
 
             phis = dd2.copy()
@@ -423,7 +462,7 @@ def Align(image,negativemask,phi = None,align_threshold = 5):
 def monotonic(q,y):
     z = y
     q = np.append(q,[0.99*q.min(),1.01*q.max()])
-    z = np.append(z,[2*z.max(),2*z.max()])
+    z = np.append(z,[2*z.max()+1e-12,2*z.max()+1e-12])
     points = np.array([q,z]).transpose()
     hull = ConvexHull(points)
     hullpoints = np.array([[points[vertex, 0], points[vertex, 1]] for vertex in hull.vertices ])
