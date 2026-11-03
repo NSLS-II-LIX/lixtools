@@ -455,8 +455,8 @@ class h5xs_an(h5xs):
         else:
             if 'overall' in samples: 
                 samples = ['overall']
-            elif len(self.samples)>1:   # not sure what's the targeted use case here
-                raise Exception("Expect only one sample_name in analysis results without an overall group: ", self.samples)
+            #elif len(self.samples)>1:   # not sure what's the targeted use case here
+            #    raise Exception("Expect only one sample_name in analysis results without an overall group: ", self.samples)
             #else:      
             #    sn = self.samples[0]
 
@@ -530,13 +530,17 @@ class h5xs_an(h5xs):
         """
         if from_raw_data:
             rd = self.h5xs[sn].dset(sub_key, sn=sn, return_reference=False)
-            data = np.array([func(d, **kwargs) for d in rd])
+            data = func(rd, **kwargs)
+            #data = np.array([func(d, **kwargs) for d in rd])
         else:
+            # assuming the data 
             data = np.array([func(d, **kwargs) for d in self.proc_data[sn][data_key][sub_key]])
         if debug:
             print(f"got data of shape {data.shape}")
+
         #if check_size>0:
         #    data = np.pad(data, (0,check_size-len(data)), constant_values=np.nan)
+        
         if isinstance(attr_name, str):
             self.add_proc_data(sn, 'attrs', attr_name, np.array(data))
         elif isinstance(attr_name, list):
@@ -1233,6 +1237,37 @@ class h5xs_an(h5xs):
                 grp[k][...] = sd
             else:
                 grp.create_dataset(k, data=sd)
+    
+    @h5_file_access
+    def get_datapoint(self, sn, data_key, sub_key, index, quiet=False):
+        dtype = self.fh5[sn][data_key].attrs['type']
+        h5data = self.fh5[sn][data_key][sub_key]
+        
+        # simple numpy array
+        if dtype=="ndarray":
+            return h5data[index]
+
+        # complex data type with attrubutes
+        if dtype=='Data1d':
+            d0 = Data1d()
+        elif dtype=="MatrixWithCoords":
+            d0 = MatrixWithCoords()
+        else:
+            raise Exception(f"unsupported data type: {dtype}")
+        for field in save_fields[dtype]['shared']:
+            d0.__dict__[field] = self.fh5[sn][data_key].attrs[field]
+
+        fields = save_fields[dtype]['unique']
+        n = h5data.attrs['len']
+        for f in fields:
+            if not f in h5data.keys():
+                continue
+            if n==1:
+                d0.__dict__[f] = h5data[f][...]
+            else:
+                d0.__dict__[f] = h5data[f][index]
+
+        return d0
     
     @h5_file_access
     def load_data(self, samples=None, read_data_keys=None, read_sub_keys=None, quiet=False):

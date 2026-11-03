@@ -13,7 +13,7 @@ from lixtools.hdf import h5xs_an,h5xs_scan
 from py4xs.utils import get_grid_from_bin_ranges
 from lixtools.mapping.common import get_q_data_dask,sub_bkg_q_dask,get_phi_data_dask,make_map_from_overall_attr
 from lixtools.mapping.common import prep_XRF_data,scf,fix_absorption_map,make_maps_from_Iq,scale_transmitted_maps,fix_maps
-from lixtools.mapping.plants import calc_CI,prep_mfa_data
+from lixtools.mapping.plants import calc_CI,make_Iphi_maps,prep_mfa_data
 from lixtools.tomo.common import stack_2d_slices
 
 import glob,PIL,time,json
@@ -103,26 +103,29 @@ for sample in pp.sample_list:
             print(f"time elapsed: {time.time()-t0:.1f} sec")
         dt.explicit_close_h5()
 
-    sn0 = dt.samples[0]
+    sns = dt.samples
     if pp.save_overall:
         sn = 'overall'
+        sns = [sn]
     else:
-        sn = sn0
+        sn = sns[0]
     if pp.extract_q_profiles:
         print(f"1a. extract q- profiles ...")
+        # normalization to transmitted intensity is done implicitly, using the default value of ref_trans=5000
         get_q_data_dask(dt, q0=0.06, ex=2.3, q_range=pp.qrange_1d, dezinger=pp.dz, save_to_overall=pp.save_overall)
         d1dk = "merged"
         if pp.subtract_bkg_q:
             sub_bkg_q_dask(dt, save_to_overall=pp.save_overall)
             d1dk = "subtracted"
-        dt.load_data(sn, ['Iq'], [d1dk])
-        dt.proc_data[sn]['Iq']['averaged'] = np.average(dt.proc_data['overall']['Iq'][d1dk], axis=0)
-        dt.save_data(save_sns=[sn], save_data_keys=["Iq"], save_sub_keys=['averaged'])
+        for sn in sns:
+            dt.load_data(sn, ['Iq'], [d1dk])
+            dt.proc_data[sn]['Iq']['averaged'] = np.average(dt.proc_data[sn]['Iq'][d1dk], axis=0)
+            dt.save_data(save_sns=[sn], save_data_keys=["Iq"], save_sub_keys=['averaged'])
     
     if pp.extract_phi_profiles:
         print(f"1b. extract phi- profiles ...")
         for phik in pp.phi_profile_locations.keys():
-            get_phi_data_dask(dt, q_range=pp.phi_profile_locations[phik], sub_key=phik) 
+            get_phi_data_dask(dt, q_range=pp.phi_profile_locations[phik], sub_key=phik, save_to_overall=pp.save_overall) 
 
     maps_present = False
     if pp.construct_scattering_maps:
@@ -151,7 +154,7 @@ for sample in pp.sample_list:
                         dt.load_data(ssn, [args[0]], [args[1]])
                     dt.extract_attr(ssn, k, func, *args, **kwargs)
         dt.make_map_from_attr(save_overall=pp.save_overall, attr_names=okeys, correct_for_transsmission=False)
-            
+                        
         if not pp.extract_q_profiles:
             dt.load_data(read_data_keys=['Iq'])
         if dt.has_data('Iq'):
@@ -163,9 +166,29 @@ for sample in pp.sample_list:
             make_maps_from_Iq([dt], int_data=d1dk, q_list=pp.q_map_dict, abs_cor=False, save_overall=pp.save_overall)
             maps_present = True
 
+        for phik in pp.phi_profile_locations.keys():
+            dt.load_data(sns, ['Iphi'], [phik])
+            make_Iphi_maps(dt, phik, save_overall=pp.save_overall)
+    
     if pp.construct_XRF_maps:
         print(f"2c. create XRF maps ...")
+        # normalize to incident intensity
+        if not sn in dt.proc_data.keys():
+            dt.load_data([sn], ['maps'])
+        elif not 'incident' in dt.proc_data[sn]['maps'].keys():
+            dt.load_data([sn], ['maps'])
+        sc = dt.proc_data[sn]['maps']['incident'].d/pp.ref_incident
+
         prep_XRF_data(dt, pp.ele_list, pyxrf_param_fn=pp.pyxrf_param_fn, eNstart=pp.eNstart, eNend=pp.eNend, save_overall=pp.save_overall)
+
+        mps = dt.proc_data[sn]['maps']
+        xrf_maps = [mn for mn in mps.keys() if 'xrf' in mn and not 'sum' in mn]
+        for k in xrf_maps:
+            for mm in mps[k]:
+                mm.d /= sc
+
+        dt.save_data([sn], ['maps'], xrf_maps)
+
         maps_present = True
 
     if pp.tomo_reconstruction:
@@ -206,8 +229,8 @@ for sample in pp.sample_list:
 
         if pp.construct_Iphi_tomo:
             print(f"3d. reconstructing Iphi tomograms ...")
-            dt.load_data('overall', ['Iphi'])
-            for k in pp.phi_profile_locations.keys():
+            klist = [k for k in pp.phi_profile_locations.keys() if dt.has_proc_data('overall', 'maps', f'Iphi-{k}')]
+            for k in klist:
                 prep_mfa_data(dt, rot_cen, algorithm=pp.algorithm, data_sub_key=k, 
                               num_iter=pp.num_iter, ref_key=pp.ref_map, ref_cutoff=pp.ref_cutoff)
         
@@ -217,7 +240,6 @@ for sample in pp.sample_list:
                 for k in xrf_maps:
                     mm = dt.proc_data['overall']['maps'][k][0].copy()
                     mm.d = np.nansum([m0.d for m0 in dt.proc_data['overall']['maps'][k]], axis=0)
-                    mm.d /= (dt.proc_data['overall']['maps']['incident'].d/pp.ref_incident)
                     dt.proc_data['overall']['maps'][k+"_sum"] = mm
                 fix_maps(dt, map_sub_keys=[k+"_sum" for k in xrf_maps], fix_inf=True)    # sometimes em1/em2 reports 0; this also saves maps  
                 dt.calc_tomo_from_map(attr_names=[k+"_sum" for k in xrf_maps], algorithm=pp.algorithm, 

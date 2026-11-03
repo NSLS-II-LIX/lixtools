@@ -85,8 +85,8 @@ def make_ev_maps(dts, x, eig_vectors, coefs, res=None, name='q', abs_cor=False, 
         if not 'attrs' in dt.proc_data['overall'].keys():
             dt.proc_data['overall']['attrs'] = {}
         dt.proc_data['overall']['attrs'][f'evs_{name}'] = eig_vectors
-        dt.proc_data['overall']['attrs'][f'ev_{name}'] = x
-        dt.save_data(save_sns='overall', save_data_keys=['attrs'], save_sub_keys=[f'evs_{name}', f'ev_{name}'], quiet=True)
+        dt.proc_data['overall']['attrs'][f'q_{name}'] = x
+        dt.save_data(save_sns='overall', save_data_keys=['attrs'], save_sub_keys=[f'evs_{name}', f'q_{name}'], quiet=True)
         dt.save_data(save_sns='overall', save_data_keys=['maps'], save_sub_keys=maps, quiet=True)
         
 def recombine(coef, method="nmf"):
@@ -151,14 +151,13 @@ class ComponentSeparator:
         plt.plot(qq, self.res[i])
         plt.plot(qq, np.dot(self.evs, self.coefs[:,i]))
     
-    def make_ev_maps(self, label):
+    def make_ev_maps(self, label, template_grp="int_saxs"):
         """ add a label to distinguish between different eigenvectors
         """
         self.dts[0].load_data("overall", ["maps"])
-        tgrp = list(self.dts[0].proc_data['overall']['maps'].keys())[0]
         res = np.sqrt(np.average(self.res*self.res, axis=-1))
         make_ev_maps(self.dts, self.qgrid[self.qmask], self.evs, self.coefs, res=res, 
-                     name=label, abs_cor=False, template_grp=tgrp)
+                     name=label, abs_cor=False, template_grp=template_grp)
         
     def clustering_analysis(self):
         pass
