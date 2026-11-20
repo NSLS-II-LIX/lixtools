@@ -101,7 +101,6 @@ for sample in pp.sample_list:
         else:
             dt.process(N=16, max_c_size=2048, debug=True)
             print(f"time elapsed: {time.time()-t0:.1f} sec")
-        dt.explicit_close_h5()
 
     sns = dt.samples
     if pp.save_overall:

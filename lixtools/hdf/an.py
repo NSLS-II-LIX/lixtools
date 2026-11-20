@@ -48,7 +48,7 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
         raise Exception(f"expecting two motors, got {motors}.")
     # slow axis is the first motor 
     #spos = dh5xs.fh5[sn][f"primary/data/{motors[0]}"][...].flatten() 
-    spos = dh5xs.dset(motors[0], sn=sn, return_reference=False).flatten() 
+    spos = dh5xs.dset(motors[0], sn=sn).flatten() 
     n = int(len(spos)/shape[0])
     if n>1:
         spos = spos[::n]         # in step scans, the slow axis position is reported every step
@@ -58,7 +58,7 @@ def get_scan_parms(dh5xs, sn, prec=0.0001, force_uniform_steps=True):
     
     # for the fast axis, the Newport fly scan sometime repeats position data  
     #fpos = dh5xs.fh5[sn][f"primary/data/{motors[1]}"][...].flatten()
-    fpos = dh5xs.dset(motors[1], sn=sn, return_reference=False).flatten()
+    fpos = dh5xs.dset(motors[1], sn=sn).flatten()
     n = int(len(fpos)/shape[0]/shape[1])
     fpos = fpos[::n]         # remove redundancy, specific to fly scanning with Newport
     fpos = fpos[:shape[1]]   # assume these positions are repeating
@@ -230,52 +230,58 @@ class h5xs_an(h5xs):
         self.proc_data = {}
         self.h5xs = {}
         self.raw_data = {}
+
+        self.init_an(pre_proc=pre_proc, Nphi=Nphi, 
+                     load_raw_data=load_raw_data, replace_path=replace_path,
+                     ignore_source_path=ignore_source_path, quiet=quiet)
+
+    @h5_file_access
+    def init_an(self, pre_proc, Nphi, load_raw_data, replace_path, ignore_source_path, quiet=True):
+        if "pre_proc" in self.fh5.attrs:
+            pre_proc0 = self.fh5.attrs["pre_proc"]
+            if pre_proc0!=pre_proc:
+                print(f"Warning: using existing pre_proc type {pre_proc0} instead of {pre_proc}")
+                pre_proc = pre_proc0
+        else:
+            self.set_h5_attrs("/", "pre_proc", pre_proc)
+        self.pre_proc = pre_proc
         
-        with h5py.File(fn, swmr=True) as self.fh5:            
-            if "pre_proc" in self.fh5.attrs:
-                pre_proc0 = self.fh5.attrs["pre_proc"]
-                if pre_proc0!=pre_proc:
-                    print(f"Warning: using existing pre_proc type {pre_proc0} instead of {pre_proc}")
-                    pre_proc = pre_proc0
+        if pre_proc=="2D":
+            if "Nphi" in self.fh5.attrs:
+                Nphi0 = int(self.fh5.attrs['Nphi'])
+                if Nphi0!=Nphi:
+                    print(f"Warning: using existing Nphi={Nphi0} instead of {Nphi}")
+                    Nphi = Nphi0
             else:
-                self.set_h5_attrs("/", "pre_proc", pre_proc)
-            self.pre_proc = pre_proc
-            if pre_proc=="2D":
-                if "Nphi" in self.fh5.attrs:
-                    Nphi0 = int(self.get_h5_attrs('Nphi')
-                    if Nphi0!=Nphi:
-                        print(f"Warning: using existing Nphi={Nphi0} instead of {Nphi}")
-                        Nphi = Nphi0
+                self.set_h5_attrs("/", 'Nphi', Nphi)
+            self.Nphi = Nphi
+            self.phigrid = np.linspace(-180, 180, self.Nphi)
+    
+        # if there are raw data file info, prepare the read only h5xs objects in case needed
+        self.samples = list(self.fh5.keys())
+        if 'overall' in self.samples:
+            self.samples.remove('overall')
+            self.attrs['overall'] = {}
+        for sn in self.samples:
+            self.attrs[sn] = {}
+            fn_raw0 = self.fh5[sn].attrs['source']
+            fn_raw_path = os.path.dirname(fn_raw0)
+            fn_raw = update_res_path(fn_raw0, replace_path, quiet=quiet)
+            if not os.path.exists(fn_raw):
+                if ignore_source_path:
+                    fn_raw = ""
                 else:
-                    self.set_h5_attrs("/", 'Nphi', Nphi)
-                self.Nphi = Nphi
-                self.phigrid = np.linspace(-180, 180, self.Nphi)
-        
-            # if there are raw data file info, prepare the read only h5xs objects in case needed
-            self.samples = list(self.fh5.keys())
-            if 'overall' in self.samples:
-                self.samples.remove('overall')
-                self.attrs['overall'] = {}
-            for sn in self.samples:
-                self.attrs[sn] = {}
-                fn_raw0 = self.fh5[sn].attrs['source']
-                fn_raw_path = os.path.dirname(fn_raw0)
-                fn_raw = update_res_path(fn_raw0, replace_path, quiet=quiet)
-                if not os.path.exists(fn_raw):
-                    if ignore_source_path:
-                        fn_raw = ""
-                    else:
-                        raise Exception(f"raw data file {fn_raw} does not exist ...")
-                if fn_raw!=fn_raw0:
-                    self.set_h5_attr(sn, 'source', fn_raw)
-                if load_raw_data:
-                    if not fn_raw in self.raw_data.keys():
-                        self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], 
-                                                     sn=sn, read_only=True)
-                    self.h5xs[sn] = self.raw_data[fn_raw]
-                else: 
-                    self.h5xs[sn] = fn_raw
-                self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
+                    raise Exception(f"raw data file {fn_raw} does not exist ...")
+            if fn_raw!=fn_raw0:
+                self.set_h5_attr(sn, 'source', fn_raw)
+            if load_raw_data:
+                if not fn_raw in self.raw_data.keys():
+                    self.raw_data[fn_raw] = h5xs(fn_raw, [self.detectors, self.qgrid], 
+                                                 sn=sn, read_only=True)
+                self.h5xs[sn] = self.raw_data[fn_raw]
+            else: 
+                self.h5xs[sn] = fn_raw
+            self.attrs[sn]['header'] = json.loads(self.fh5[sn].attrs['header'])
 
     def list_data(self):
         for sn,d in self.proc_data.items(): 
@@ -294,7 +300,7 @@ class h5xs_an(h5xs):
     def show_data_qxy(self, sn, **kwargs):
         return self.h5xs[sn].show_data_qxy(sn=sn, detectors=self.detectors, **kwargs)
 
-    @h5_file_access
+    @h5_file_access(write=True)
     def import_raw_data(self, fn_raw, sn=None, save_attr=["source", "header"], debug=False, **kwargs):
         """ create new group, copy header
             save_attr: meta data that should be extracted from the raw data file
@@ -318,7 +324,6 @@ class h5xs_an(h5xs):
             if debug:
                 print(f"    importing {sn} ...")
             self.h5xs[sn] = dt
-            self.enable_write(True)
             if not sn in self.attrs.keys():
                 self.attrs[sn] = {}
             if not sn in self.fh5.keys():
@@ -338,8 +343,6 @@ class h5xs_an(h5xs):
             if "scan" in save_attr:
                 self.attrs[sn]['scan'] = get_scan_parms(dt, sn, **kwargs)
                 grp.attrs['scan'] = json.dumps(self.attrs[sn]['scan'])
-
-            self.enable_write(False)
         
             if not sn in self.proc_data.keys():
                 self.proc_data[sn] = {}
@@ -402,7 +405,7 @@ class h5xs_an(h5xs):
             self.proc_data[sn][data_key] = {}
         self.proc_data[sn][data_key][sub_key] = data
     
-    @h5_file_access
+    @h5_file_access(write=True)
     def link_proc_data(self, fns):
         """ fns are expected to contain sample groups with processed data
             iterate over all samples, link every processed data groups under this an/an2.h5 file
@@ -410,8 +413,6 @@ class h5xs_an(h5xs):
             example of source dataset: {sn}/processed/qphi/merged/d 
             example of target dataset: {sn}/qphi/merged/d
         """
-        #with h5py.File(self.fn, "w") as ff:
-        self.enable_write(True)
         for s in fns:
             with h5py.File(s, "r", swmr=True) as fs:
                 for sn in fs.keys():
@@ -424,30 +425,7 @@ class h5xs_an(h5xs):
                         dkk = f"{sn}/{dk}"
                         print(dkk)
                         self.fh5[dkk] = h5py.ExternalLink(s, dkk0)
-        self.enable_write(False)
 
-    def link_proc_data1(self, fns):
-        """ fns are expected to contain sample groups with processed data
-            iterate over all samples, link every processed data groups under this an/an2.h5 file
-
-            example of source dataset: {sn}/processed/qphi/merged/d 
-            example of target dataset: {sn}/qphi/merged/d
-        """
-        with h5py.File(self.fn, "r+") as ff:
-            for s in fns:
-                with h5py.File(s, "r", swmr=True) as fs:
-                    for sn in fs.keys():
-                        if not sn in self.samples:
-                            raise Exception(f"mismatched sample: {sn}")
-                        if not "processed" in fs[sn].keys():
-                            continue
-                        for dk in fs[sn]["processed"].keys():
-                            dkk0 = f"{sn}/processed/{dk}"
-                            dkk = f"{sn}/{dk}"
-                            print(dkk)
-                            ff[dkk] = h5py.ExternalLink(s, dkk0)
-    
-    @h5_file_access
     def extract_attr(self, sn, attr_name, func, data_key, sub_key, from_raw_data=False,
                      N=8, check_size=0, debug=False, **kwargs):
         """ extract an attribute from the pre-processed data using the specified function
@@ -455,7 +433,7 @@ class h5xs_an(h5xs):
             check_size was a bandage solution and should be removed
         """
         if from_raw_data:
-            rd = self.h5xs[sn].dset(sub_key, sn=sn, return_reference=False)
+            rd = self.h5xs[sn].dset(sub_key, sn=sn)
             data = func(rd, **kwargs)
             #data = np.array([func(d, **kwargs) for d in rd])
         else:
@@ -501,7 +479,16 @@ class h5xs_an(h5xs):
             t2 = time.time()
             print("done, time elapsed: %.2f sec" % (t2-t1))   
 
-    @h5_file_access
+    def save_processed_results(self, results, data_key, sub_key, data_proto, apply_symmetry):
+        for sn in results.keys():  
+            arr_ds = np.vstack([results[sn][frn0] for frn0 in sorted(results[sn].keys())])
+            if apply_symmetry:
+                arr_ds[np.isnan(arr_ds)] = 0
+                arr_ds += np.hstack([arr_ds[:,Np:,:], arr_ds[:,:Np,:]])
+                arr_ds /= sm
+            data_proto.d = arr_ds[0]
+            self.pack(sn, data_key, sub_key, arr_data={'d': arr_ds}, data_proto=data_proto)
+
     def process_qxy(self, qmax, dq, det_ext, apply_symmetry=True,
                     N=8, max_c_size=1024, debug=True):
         """ produce qx-qy maps corresponding to each exposure
@@ -577,18 +564,8 @@ class h5xs_an(h5xs):
         sm = np.sum(np.asarray([m for m in dQxyMask.values()], dtype=np.int8), axis=0)
         sm += np.fliplr(np.flipud(sm))
 
-        self.enable_write(True)
-        for sn in results.keys():  
-            arr_ds = np.vstack([results[sn][frn0] for frn0 in sorted(results[sn].keys())])
-            if apply_symmetry:
-                arr_ds[np.isnan(arr_ds)] = 0
-                arr_ds += np.flip(np.flip(arr_ds, axis=2), axis=1)
-                arr_ds /= sm
-            dd2.d = arr_ds[0]
-            self.pack(sn, 'qxy', map_key, arr_data={'d': arr_ds}, data_proto=dd2)
-        self.enable_write(False)
+        self.save_processed_results(results, 'qxy', map_key, dd2, apply_symmetry=apply_symmetry) 
         
-    @h5_file_access
     def process_qxy_SAXS(self, qmax, debug=True):
         """ produce qx-qy maps corresponding to each exposure, for SAXS only, apply central symmetry
             retain the pixel resolution from the raw data, to get around the issue over-sampling by 2D histogramming
@@ -659,7 +636,6 @@ class h5xs_an(h5xs):
             self.save_data([sn], ['qxy', 'Iq'])
             self.set_h5_attr(f"{sn}/Iq/{map_key}", "qgrid", (bb[1:]+bb[:-1])/2)
             
-    @h5_file_access
     def process1d(self, N=8, max_c_size=1024, debug=True):
         """ produce merged I(q) profiles
             the bottleneck is reading the data
@@ -726,7 +702,6 @@ class h5xs_an(h5xs):
                     data.append(d1)
             self.add_proc_data(sn, 'azi_avg', 'merged', data)
 
-    @h5_file_access
     def process2d(self, N=8, max_c_size=1024, apply_symmetry=False, debug=True):
         """ produce merged q-phi maps
             the bottleneck is reading the data
@@ -797,16 +772,7 @@ class h5xs_an(h5xs):
         dd2.yc_label = "phi"
         dd2.err = None
         
-        self.enable_write(True)
-        for sn in results.keys():  
-            arr_ds = np.vstack([results[sn][frn0] for frn0 in sorted(results[sn].keys())])
-            if apply_symmetry:
-                arr_ds[np.isnan(arr_ds)] = 0
-                arr_ds += np.hstack([arr_ds[:,Np:,:], arr_ds[:,:Np,:]])
-                arr_ds /= sm
-            dd2.d = arr_ds[0]
-            self.pack(sn, 'qphi', 'merged', arr_data={'d': arr_ds}, data_proto=dd2)
-        self.enable_write(False)
+        self.save_processed_results(results, 'qphi', 'merged', dd2, apply_symmetry=apply_symmetry) 
             
     def export_data(self, fn, data_keys=None, path='.'):
         """ export all data under "overall" if there are multiple samples
@@ -828,7 +794,6 @@ class h5xs_an(h5xs):
                 self.pack(sn, data_key, sub_key, fh5=fh5)
         fh5.close()
     
-    @h5_file_access
     def save_data(self, save_sns=None, save_data_keys=None, save_sub_keys=None, quiet=False):
         print("saving processed data ...")
         if save_sns is None:
@@ -838,7 +803,6 @@ class h5xs_an(h5xs):
         elif not isinstance(save_sns, list):
             save_sns = [save_sns]
             
-        self.enable_write(True)
         for sn in save_sns:
             dks = self.proc_data[sn].keys()
             if save_data_keys is not None:
@@ -854,12 +818,11 @@ class h5xs_an(h5xs):
                 for sub_key in sks:
                     print(f"{sn}, {data_key}, {sub_key}        \r", end="")
                     self.pack(sn, data_key, sub_key)
-        self.fh5.flush()
-        self.enable_write(False)
+
         if not quiet:
             print("done.                      ")
     
-    @h5_file_access
+    @h5_file_access(write=True)
     def pack(self, sn, data_key, sub_key, fh5=None, arr_data=None, data_proto=None):
         """ this is for packing processed data, which should be stored under self.proc_data as a dictionary
             sn="overall" is merged from all samples in the h5xs_an object
