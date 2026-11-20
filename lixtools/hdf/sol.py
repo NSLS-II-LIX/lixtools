@@ -275,6 +275,7 @@ class h5sol_HT(h5xs):
             else:
                 sf = self.attrs[sn]['sc_factor']
             self.d1s[sn]['subtracted'] = self.d1s[sn][input_grp].bkg_cor(self.d1b[sn], sc_factor=sf,
+                                                                         label=f'{sn}-subtracted', debug=debug)
 
         self.update_h5() 
         if debug is True:
