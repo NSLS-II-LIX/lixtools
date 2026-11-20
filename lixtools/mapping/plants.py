@@ -210,6 +210,79 @@ def get_masks_surf_int(dt, dk="int_cell_Iq", thresh=0.03, surf_thk0=20, surf_thk
     return edge,inside2
 
 
+import h5py
+from py4xs.data2d import Data2d
+
+def plot_as_fiber_pattern_max(dt, thresh=0.95, qmax=2.5, Nq=321, clim=[5.5, 60]):
+    
+    sn = dt.samples[0]
+    dt.load_data(sn, ['attrs'], ['xrf_elastic'])
+    v_el = np.sum(dt.proc_data[sn]['attrs']['xrf_elastic'], axis=1)
+    frns = np.where(v_el>thresh*np.max(v_el))[0]
+    dtt = dt.h5xs[sn]
+    det = dt.detectors[1]
+    print(frns)
+    
+    mms_qrqz = []
+    mms_qphi = []
+    with h5py.File(dtt.fn, "r") as fh5:
+        strn = 'pil'
+        dset = fh5[f"{sn}/{strn}/data/{dtt.det_name['_WAXS2']}"]
+        for frn in frns:
+            d2w = Data2d(dset[frn], exp=det.exp_para)
+            d2w.conv_Iqrqz(np.linspace(-qmax, qmax, Nq), np.linspace(-qmax, qmax, Nq), mask=d2w.exp.mask)
+            mms_qrqz.append(d2w.qrqz_data)
+    qrqz_data = mms_qrqz[0].average(mms_qrqz[1:])
+    
+    mm1 = qrqz_data.copy()
+    mm1.d = np.flip(mm1.d)
+    mm2 = qrqz_data.copy()
+    mm2.d = np.flipud(mm1.d)
+    mm3 = qrqz_data.copy()
+    mm3.d = np.fliplr(mm1.d)
+    mm = qrqz_data.merge([mm1, mm2, mm3])
+
+    plt.figure(figsize=(9,4))
+    plt.subplot(121)
+    mm.plot(ax=plt.gca(), norm="symlog", clim=clim)
+    plt.subplot(122)
+    plt.title(sn)
+    xx,yy0,_ = mm.line_profile("x", xrange=[0.25, 2.3], yrange=[-0.02, 0.02]) 
+    xx,yy4,_ = mm.line_profile("x", xrange=[0.25, 2.3], yrange=[1.81, 1.85]) 
+    plt.plot(xx, yy0)
+    plt.plot(xx, yy4+20)
+
+    plt.subplots_adjust(wspace=0.2)
+
+    return mm
+
+def plot_as_fiber_pattern(dt, sn, frn, qmax=2.5, Nq=321, clim=[5.5, 60]):
+    d2w = dt.h5xs[sn].get_d2(frn=frn, det_ext="_WAXS2")
+    d2w.conv_Iqrqz(np.linspace(-qmax, qmax, Nq), np.linspace(-qmax, qmax, Nq), mask=d2w.exp.mask)
+
+    mm1 = d2w.qrqz_data.copy()
+    mm1.d = np.flip(mm1.d)
+    mm2 = d2w.qrqz_data.copy()
+    mm2.d = np.flipud(mm1.d)
+    mm3 = d2w.qrqz_data.copy()
+    mm3.d = np.fliplr(mm1.d)
+    mm = d2w.qrqz_data.merge([mm1, mm2, mm3])
+
+    plt.figure(figsize=(9,4))
+    plt.subplot(121)
+    mm.plot(ax=plt.gca(), norm="symlog", clim=clim)
+    plt.subplot(122)
+    plt.title(sn)
+    xx,yy0,_ = mm.line_profile("x", xrange=[0.25, 2.3], yrange=[-0.02, 0.02]) 
+    xx,yy4,_ = mm.line_profile("x", xrange=[0.25, 2.3], yrange=[1.81, 1.85]) 
+    plt.plot(xx, yy0)
+    plt.plot(xx, yy4+20)
+
+    plt.subplots_adjust(wspace=0.2)
+
+    return mm
+
+
 from scipy.optimize import nnls
 
 def phiC(nu, alpha, theta):
