@@ -161,7 +161,7 @@ class h5sol_HT(h5xs):
             if sn in list(attr_list.keys()):
                 self.set_h5_attrs(sn, attr_name, '  '.join(attr_list[sn]))
             elif self.has_h5_attrs(sn, attr_name):
-                del self.del_h5_attrs(sn, attr_name)
+                self.del_h5_attrs(sn, attr_name)
     
     def assign_buffer(self, buf_list, debug=False):
         """ buf_list should be a dict:
