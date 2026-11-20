@@ -109,9 +109,7 @@ class h5sol_ref(h5xs):
             plt.ylim(0.1, 5)
             plt.show()
 
-        self.enable_write(True)
-        self.fh5.attrs['abs_scaling'] = json.dumps(scaling_dict)
-        self.enable_write(False)
+        self.set_h5_attrs('/', 'abs_scaling', json.dumps(scaling_dict))
         self.scaling = scaling_dict
         
     def scaling_factor(self, cn=None):
@@ -145,7 +143,6 @@ class h5sol_HT(h5xs):
     def load_d1s(self, sn=None, read_attrs=['buffer']):
         super().load_d1s(sn, read_attrs=read_attrs)
         
-    @h5_file_access  
     def assign_sample_attr(self, sa_dict, attr_name="buffer", debug=False):
         attr_list = self.__dict__[f"{attr_name}_list"]
         for sn in list(sa_dict.keys()):
@@ -159,15 +156,13 @@ class h5sol_HT(h5xs):
         if self.read_only:
             print("h5 file is read-only ...")
             return
-        self.enable_write(True)
+
         for sn in self.samples:
             if sn in list(attr_list.keys()):
-                self.fh5[sn].attrs[attr_name] = '  '.join(attr_list[sn])
-            elif attr_name in list(self.fh5[sn].attrs):
-                del self.fh5[sn].attrs[attr_name]
-        self.enable_write(False)
-        
-    @h5_file_access  
+                self.set_h5_attrs(sn, attr_name, '  '.join(attr_list[sn]))
+            elif self.has_h5_attrs(sn, attr_name):
+                del self.del_h5_attrs(sn, attr_name)
+    
     def assign_buffer(self, buf_list, debug=False):
         """ buf_list should be a dict:
             {"sample_name": "buffer_name",
@@ -178,7 +173,6 @@ class h5sol_HT(h5xs):
         """
         self.assign_sample_attr(buf_list, "buffer")
 
-    @h5_file_access  
     def change_buffer(self, sample_name, buffer_name):
         """ buffer_name could be just a string (name) or a list of names 
             if sample_name is a list, all samples in the list will be assigned the same buffer
@@ -200,12 +194,9 @@ class h5sol_HT(h5xs):
             if sn not in self.samples:
                 raise Exception(f"invalid sample name: {sn}")
             self.buffer_list[sn] = buffer_name 
-            self.enable_write(True)
-            self.fh5[sn].attrs['buffer'] = '  '.join(buffer_name)
-            self.enable_write(False)
+            self.set_h5_attrs(sn, 'buffer', '  '.join(buffer_name))
             self.subtract_buffer(sn)
                 
-    @h5_file_access  
     def update_h5(self, debug=False):
         """ raw data are updated using add_sample()
             save sample-buffer assignment
@@ -217,14 +208,12 @@ class h5sol_HT(h5xs):
             print("h5 file is read-only ...")
             return
         for sn in self.samples:
-            self.enable_write(True)
-            self.fh5[sn].attrs['selected'] = self.attrs[sn]['selected']
+            self.set_h5_attrs(sn, 'selected', self.attrs[sn]['selected'])
             if sn in list(self.buffer_list.keys()):
-                self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
-                self.fh5[sn].attrs['sc_factor'] = self.attrs[sn]['sc_factor']
-            elif 'buffer' in list(self.fh5[sn].attrs):
-                del self.fh5[sn].attrs['buffer']
-            self.enable_write(False)                
+                self.set_h5_attrs(sn, 'buffer', '  '.join(self.buffer_list[sn]))
+                self.set_h5_attrs(sn, 'sc_factor', self.attrs[sn]['sc_factor'])
+            elif self.has_h5_attrs(sn, 'buffer'):
+                self.del_h5_attrs(sn, 'buffer')
             self.save_d1s(sn, debug=debug)
         
     def process(self, detectors=None, update_only=False,
@@ -261,7 +250,7 @@ class h5sol_HT(h5xs):
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
-        #self.enable_write(True)
+
         for sn in samples:
             if update_only and 'subtracted' in list(self.d1s[sn].keys()): continue
             if sn not in list(self.buffer_list.keys()): continue
@@ -286,8 +275,6 @@ class h5sol_HT(h5xs):
             else:
                 sf = self.attrs[sn]['sc_factor']
             self.d1s[sn]['subtracted'] = self.d1s[sn][input_grp].bkg_cor(self.d1b[sn], sc_factor=sf,
-                                                                         label=f'{sn}-subtracted', debug=debug)
-        #self.enable_write(False)
 
         self.update_h5() 
         if debug is True:
